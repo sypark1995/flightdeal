@@ -32,7 +32,7 @@ class PriceChangeNotifier @Inject constructor(
         if (changes.isEmpty()) return emptyList()
 
         ensureChannel()
-        if (!notificationsAllowed()) return emptyList()
+        if (!NotificationStatus.isAllowed(context)) return emptyList()
 
         val byId = routes.associateBy { it.id }
         val shown = changes.filter { byId.containsKey(it.trackedRouteId) }
@@ -58,7 +58,7 @@ class PriceChangeNotifier @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, NotificationStatus.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(lines.first())
@@ -72,37 +72,17 @@ class PriceChangeNotifier @Inject constructor(
     }
 
     /**
-     * 권한이 없으면 조용히 넘어간다. 알림을 못 받을 뿐 앱의 나머지는 정상 동작해야 한다.
-     *
-     * `POST_NOTIFICATIONS`를 직접 확인하면 안 된다. 그 권한은 API 33부터 존재하고,
-     * minSdk 26~32에서는 시스템이 모르는 권한이라 항상 거부로 나온다.
-     * 정작 그 버전들은 런타임 권한 자체가 필요 없는데도 알림이 전부 버려진다.
-     *
-     * 앱 전체 스위치와 채널 스위치를 모두 본다.
-     *
-     * `areNotificationsEnabled()`만 보면 안 된다. 사용자가 "가격 변동" 채널 하나만 끈
-     * 경우에도 참을 돌려주는데, 그 상태에서 `notify()`는 조용히 버려진다. 그걸 성공으로
-     * 보고하면 워커가 기준선을 옮기고, 알리지 못한 변동이 영영 사라진다.
+     * 알림 가능 여부 판정은 [NotificationStatus]로 뽑았다 — 내정보 화면도 같은 함수를
+     * 부른다. 화면과 워커가 각자 판정하면 둘이 어긋날 수 있다.
      */
-    private fun notificationsAllowed(): Boolean {
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
-        val channel = context.getSystemService(NotificationManager::class.java)
-            .getNotificationChannel(CHANNEL_ID)
-        // channel == null은 ensureChannel()이 방금 만들었는데도 조회가 실패했다는 뜻이다.
-        // 사용자가 끈 것이 아니라 조회 실패이므로 허용으로 본다.
-        return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
-    }
-
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "가격 변동", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel(NotificationStatus.CHANNEL_ID, "가격 변동", NotificationManager.IMPORTANCE_DEFAULT)
         )
     }
 
     private companion object {
-        const val CHANNEL_ID = "price_change"
-
         // 고정 ID라 새 알림이 이전 알림을 덮어쓴다. 의도한 동작이다: 알림은 정보를
         // 담는 게 아니라 추적 화면으로 가는 포인터일 뿐이고, 그 화면이 항상 최신
         // 전체 상태를 보여주므로 이전 알림이 안 보였어도 잃는 정보가 없다.
