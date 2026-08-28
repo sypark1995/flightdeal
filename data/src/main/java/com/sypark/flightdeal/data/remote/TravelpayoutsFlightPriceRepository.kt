@@ -16,8 +16,11 @@ import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 
 class TravelpayoutsFlightPriceRepository(
     private val api: TravelpayoutsApi,
@@ -28,6 +31,17 @@ class TravelpayoutsFlightPriceRepository(
 
     /** 예약처는 특가 목록을 고를 때만 쓴다. 도메인 밖으로 새 나가지 않는다. */
     private data class GatedQuote(val gate: String?, val quote: PriceQuote)
+
+    private data class CacheKey(
+        val origin: String,
+        val destination: String,
+        val month: YearMonth,
+        val tripType: TripType,
+    )
+
+    private class CacheEntry(val storedAt: Instant, val quotes: List<GatedQuote>)
+
+    private val cache = ConcurrentHashMap<CacheKey, CacheEntry>()
 
     override suspend fun cheapestDeals(
         origin: Airport,
@@ -87,6 +101,13 @@ class TravelpayoutsFlightPriceRepository(
         month: YearMonth,
         tripType: TripType,
     ): List<GatedQuote> {
+        val key = CacheKey(originIata, destinationIata, month, tripType)
+        val now = clock.instant()
+
+        cache[key]?.let { cached ->
+            if (Duration.between(cached.storedAt, now) < CACHE_TTL) return cached.quotes
+        }
+
         val monthText = month.format(MONTH_FORMAT)
         val roundTrip = tripType == TripType.ROUND_TRIP
 
@@ -99,10 +120,14 @@ class TravelpayoutsFlightPriceRepository(
         )
         if (!response.success) throw IllegalStateException("API returned success=false")
 
-        val foundAt = clock.instant()
-        return response.data.orEmpty().mapNotNull { dto ->
-            PriceQuoteMapper.toDomain(dto, foundAt, marker)?.let { GatedQuote(dto.gate, it) }
+        val quotes = response.data.orEmpty().mapNotNull { dto ->
+            PriceQuoteMapper.toDomain(dto, now, marker)?.let { GatedQuote(dto.gate, it) }
         }
+
+        // 만료된 항목은 쓸 때 함께 치운다. 별도 청소 작업을 두지 않는다.
+        cache.entries.removeIf { Duration.between(it.value.storedAt, now) >= CACHE_TTL }
+        cache[key] = CacheEntry(now, quotes)
+        return quotes
     }
 
     /**
@@ -134,5 +159,11 @@ class TravelpayoutsFlightPriceRepository(
 
         /** 피드에 띄울 인기 목적지. 설정 화면이 생기면 사용자가 고르게 한다. */
         val DEFAULT_DESTINATIONS = listOf("TYO", "BKK", "DAD", "TPE", "HKG", "SIN")
+
+        /**
+         * 피드 한 번에 cheapestDeals와 priceStats가 같은 요청을 연달아 보낸다.
+         * 그 간격만 덮으면 되므로 길 필요가 없다. 소스 데이터 자체가 7일 캐시다.
+         */
+        private val CACHE_TTL: Duration = Duration.ofMinutes(5)
     }
 }

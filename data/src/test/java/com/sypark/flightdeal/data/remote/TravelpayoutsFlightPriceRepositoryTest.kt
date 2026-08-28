@@ -165,4 +165,27 @@ class TravelpayoutsFlightPriceRepositoryTest {
 
         assertEquals(31, (result as AppResult.Success).data.size)
     }
+
+    @Test
+    fun `같은 요청을 연달아 보내면 한 번만 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        repository.priceStats(route, YearMonth.now(clock).plusMonths(2), TripType.ONE_WAY)
+
+        // 응답을 하나만 큐에 넣었다. 캐시가 없으면 두 번째 호출이 응답을 기다리다 실패한다.
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `여정 종류가 다르면 따로 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+        enqueueFixture("v3-ICN-TYO-roundtrip.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ROUND_TRIP)
+
+        // 편도와 왕복은 다른 운임이다. 같은 캐시를 쓰면 안 된다.
+        assertEquals(2, server.requestCount)
+    }
 }
