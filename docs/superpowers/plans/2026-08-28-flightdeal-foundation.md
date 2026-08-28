@@ -2810,6 +2810,62 @@ git commit -m "refactor: 특가 피드 화면을 Compose로 전환하고 XML 뷰
 - Consumes: `DealFeedUiState` 네 가지 상태 (Task 7), `DealCard` (Task 8)
 - Produces: 네 상태가 모두 화면에 표현되는 완성된 피드 화면
 
+- [ ] **Step 0: Task 8 리뷰에서 나온 자잘한 것 정리**
+
+네 가지 모두 이 태스크에서 어차피 건드리는 파일들이라 먼저 치운다.
+
+**(a) 상태바.** `MainActivity.onCreate`에서 `setContent` **앞에** `enableEdgeToEdge()`를 부른다.
+`androidx.activity.enableEdgeToEdge` import가 필요하다. 이걸 안 하면 플랫폼이 상태바 뒤에
+자기 회색 스크림을 칠해서, 흰 배경 위에 회색 띠가 따로 논다. `Scaffold`가 인셋 패딩을
+알아서 처리하므로 추가 작업은 없다.
+
+```kotlin
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            FlightDealTheme {
+                FlightDealNavHost()
+            }
+        }
+    }
+```
+
+**(b) `LazyColumn` 키에 구분자.** `DealFeedScreen.kt`의 키를 아래로 바꾼다.
+
+```kotlin
+                    key = { "${it.quote.route.destination.iata}/${it.quote.departDate}" },
+```
+
+구분자 없이 이어붙이면 두 딜이 같은 문자열을 만들 수 있고, 키가 겹치면 `LazyColumn`은
+예외를 던지며 화면이 죽는다. `iata` 길이를 보장하는 코드가 어디에도 없다.
+
+**(c) `formatWon`의 `NumberFormat` 공유.** `NumberFormat`은 스레드 안전하지 않다. 지금은
+Composable에서만 부르지만, 알림 문구를 만들 때 백그라운드에서 부르는 순간 깨진다.
+`PriceFormat.kt`를 아래로 바꾼다.
+
+```kotlin
+/** NumberFormat은 스레드 안전하지 않다. 알림 포맷팅처럼 UI 밖에서 불릴 때를 대비한다. */
+private val KRW: ThreadLocal<NumberFormat> =
+    ThreadLocal.withInitial { NumberFormat.getIntegerInstance(Locale.KOREA) }
+
+fun formatWon(won: Won): String = "${KRW.get()!!.format(won.amount)}원"
+```
+
+**(d) 카탈로그 죽은 항목 제거.** `gradle/libs.versions.toml`에서 어느 모듈도 참조하지 않는
+XML 시대 잔재를 지운다. `[versions]`의 `appcompat`, `material`, `constraintlayout`,
+`[libraries]`의 `androidx-appcompat`, `android-material`, `androidx-constraintlayout`,
+`androidx-fragment-ktx`, `androidx-activity-ktx`, `androidx-navigation-fragment`,
+`androidx-navigation-ui`.
+
+지우기 전에 참조가 없는지 확인한다.
+
+```bash
+grep -rnE "appcompat|constraintlayout|fragment\.ktx|activity\.ktx|navigation\.fragment|navigation\.ui|android\.material" --include="*.gradle.kts" .
+```
+
+기대: 출력 없음. `:data`의 `android-material` 참조가 남아 있으면 그것부터 확인한다.
+
 - [ ] **Step 1: 빈 상태·오류 메시지 Composable 작성**
 
 빈 상태와 오류 상태가 같은 Composable을 공유한다. 문구와 버튼 노출만 다르다.
