@@ -3243,3 +3243,200 @@ result.data.filter { it.departDate == tracked.departDate }.minByOrNull { it.pric
 - **`transfers`/`duration`이 도메인까지 오지 않는다.** 경유편이 직항과 같은 무게로 표시된다
 - 마커 미발급 — 딥링크는 열리되 커미션이 안 붙는다
 - 스냅샷 테이블에 `capturedAt` 인덱스 없음. 10개 추적 기준 3,600행이라 풀스캔이 마이크로초다. 실제로 느려지면 그때 근거를 갖고 붙인다
+
+---
+
+## Task 7c: 알림이 실제로 전달된 뒤에만 기준선을 옮긴다
+
+**왜 필요한가.** 지금은 폴링한 값을 무조건 이력에 쌓고, 다음 실행의 비교 대상은
+"마지막으로 관측한 값"이다. 관측과 통보가 같은 것으로 취급되기 때문에, 통보가
+실패하면 변동이 영구히 사라진다. 세 갈래로 새어나간다.
+
+1. **재시도가 변동을 지운다.** `PriceCheckWorker`는 예외가 나면 `Result.retry()`를
+   돌려주고 `doWork()` 전체가 다시 실행된다. 1차 시도에서 도쿄 스냅샷을 이미 썼다면,
+   재시도에서 도쿄의 비교 대상은 방금 쓴 그 값이다. 변동은 없던 일이 된다.
+   **재시도가 전달하려던 바로 그 변동을 파괴한다.**
+2. **알림 권한이 없으면 조용히 흘러간다.** 권한이 꺼져 있어도 스냅샷은 계속 쌓인다.
+   사용자가 나중에 권한을 켜도, 그동안의 변동은 이미 기준선에 흡수돼 다시 뜨지 않는다.
+3. **프로세스가 중간에 죽으면 그만큼 사라진다.** 스냅샷을 쓴 뒤 `notify` 전에
+   워커가 종료되면 그 변동은 어디에도 남지 않는다.
+
+**해법.** 두 가지를 분리한다.
+
+- **관측 이력** (`price_snapshot`) — 폴링할 때마다 쌓는다. 추이 그래프의 재료다. 지금 그대로.
+- **통보 기준선** (`tracked_route.notifiedPrice`) — **사용자가 마지막으로 실제로 통보받은 값.**
+  변동 판정은 이것과 비교하고, 알림이 전달된 뒤에만 옮긴다.
+
+전달에 실패하면 기준선이 그대로 남아 다음 실행에서 같은 변동이 다시 잡힌다.
+남는 위험은 "알림은 떴는데 기준선 갱신 전에 죽어서 다음 실행에 한 번 더 뜨는" 중복인데,
+**놓치는 것보다 중복이 낫다.** 이 교환은 의도된 것이다.
+
+**Files:**
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/model/TrackedRoute.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/TrackedRouteRepository.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/CheckTrackedPricesUseCase.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/TrackRouteUseCase.kt`
+- Create: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/ConfirmNotifiedUseCase.kt`
+- Modify: `data/.../local/entity/TrackedRouteEntity.kt`, `TrackedRouteDao.kt`, `RoomTrackedRouteRepository.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/FlightDealDatabase.kt`
+- Create: `data/src/main/java/com/sypark/flightdeal/data/local/Migrations.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/di/DatabaseModule.kt`
+- Modify: `presentation/.../worker/PriceCheckWorker.kt`, `PriceChangeNotifier.kt`
+
+### Step 1: 도메인에 기준선을 세운다
+
+`TrackedRoute`에 필드를 더한다:
+
+```kotlin
+    /**
+     * 사용자가 마지막으로 **실제로 통보받은** 가격. 변동 판정의 기준선이다.
+     *
+     * 마지막으로 관측한 값과 다르다. 관측은 폴링할 때마다 쌓이지만 이 값은
+     * 알림이 전달된 뒤에만 옮긴다. 전달에 실패하면 그대로 남아 다음 실행에서
+     * 같은 변동이 다시 잡힌다 — 놓치는 것보다 중복이 낫다.
+     */
+    val notifiedPrice: Won?,
+```
+
+`createdAt` **앞에** 넣는다. 뒤에 붙이면 기존 호출부의 위치 인자가 조용히 밀린다.
+
+`TrackedRouteRepository`에 더한다:
+
+```kotlin
+    /** 알림이 실제로 전달된 뒤에만 부른다. */
+    suspend fun markNotified(id: Long, price: Won)
+```
+
+### Step 2: 판정이 기준선을 보게 한다
+
+`CheckTrackedPricesUseCase.check`에서 비교 대상을 바꾼다:
+
+```kotlin
+    private suspend fun check(tracked: TrackedRoute): PriceChange? {
+        val current = currentPrice(tracked) ?: return null
+
+        // 관측 이력은 폴링마다 쌓는다. 추이 그래프의 재료이고, 판정에는 쓰지 않는다.
+        history.append(
+            PriceSnapshot(
+                trackedRouteId = tracked.id,
+                price = current,
+                tripType = tracked.tripType,
+                capturedAt = clock.instant(),
+            )
+        )
+
+        // 비교는 마지막으로 통보한 값과 한다. 마지막으로 관측한 값과 비교하면
+        // 알림이 실패했을 때 그 변동이 기준선에 흡수돼 영영 사라진다.
+        return detectChanges(tracked, tracked.notifiedPrice, current)
+    }
+```
+
+`history.latest(tracked.id)` 호출은 사라진다. `PriceHistoryRepository.latest`는
+추적 화면이 계속 쓰므로 **인터페이스에서 지우지 마라.**
+
+### Step 3: `ConfirmNotifiedUseCase`
+
+```kotlin
+package com.sypark.flightdeal.domain.usecase
+
+import com.sypark.flightdeal.domain.model.PriceChange
+import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
+import javax.inject.Inject
+
+/**
+ * 알림이 전달된 것을 확인하고 기준선을 옮긴다.
+ * 알림을 실제로 띄운 뒤에만 부른다 — 먼저 부르면 놓친 변동이 생긴다.
+ */
+class ConfirmNotifiedUseCase @Inject constructor(
+    private val trackedRoutes: TrackedRouteRepository,
+) {
+    suspend operator fun invoke(changes: List<PriceChange>) {
+        changes.forEach { trackedRoutes.markNotified(it.trackedRouteId, it.current) }
+    }
+}
+```
+
+### Step 4: 등록할 때 기준선을 함께 심는다
+
+`TrackRouteUseCase`는 첫 스냅샷과 **같은 값**을 기준선으로 넣어야 한다. 비워두면
+등록 직후 첫 폴링에서 `null` 대비 비교가 되어 없던 변동이 잡힌다 —
+Task 7b가 고친 것과 같은 종류의 결함이다.
+
+`trackedRoutes.add(...)`에 `notifiedPrice = quote.price`를 넘기고,
+`RoomTrackedRouteRepository.add`가 그것을 컬럼에 쓴다. **이미 추적 중인 노선
+(insert가 -1을 돌려준 경우)에는 덮어쓰지 마라** — 기존 기준선이 살아 있어야 한다.
+
+### Step 5: Room 마이그레이션 1 → 2
+
+`TrackedRouteEntity`에 `val notifiedPrice: Int?`를 더한다 (`createdAt` 앞).
+`FlightDealDatabase`의 `version`을 2로 올린다.
+
+```kotlin
+package com.sypark.flightdeal.data.local
+
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+/**
+ * `fallbackToDestructiveMigration()`을 쓰지 않는다. 이 앱이 지키는 데이터는
+ * 며칠에 걸쳐 모은 가격 이력이고, 그건 다시 만들어낼 수 없다.
+ */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracked_route ADD COLUMN notifiedPrice INTEGER")
+    }
+}
+```
+
+기존 행은 `notifiedPrice`가 NULL이 된다. `DetectPriceChangesUseCase`가 이미
+`previous == null`을 "비교 대상 없음"으로 다루므로, 마이그레이션 직후 첫 실행은
+변동 없음이고 그때 기준선이 채워진다. 가짜 알림이 뜨지 않는다.
+
+`DatabaseModule`에 `.addMigrations(MIGRATION_1_2)`를 건다.
+
+### Step 6: 워커가 전달을 확인한다
+
+`PriceChangeNotifier.notify`가 `Boolean`을 돌려주게 한다 — 알림을 실제로 띄웠으면
+`true`, 권한이 없거나 띄울 것이 없으면 `false`. 모든 조기 `return`을 `return false`로,
+마지막 `notify(...)` 뒤에 `return true`를 둔다.
+
+```kotlin
+    override suspend fun doWork(): Result = try {
+        val changes = checkPrices()
+        // 전달된 뒤에만 기준선을 옮긴다. 순서가 뒤집히면 알림이 실패한 변동이 사라진다.
+        if (notifier.notify(changes, trackedRoutes.getAll())) {
+            confirmNotified(changes)
+        }
+        Log.d(TAG, "가격 확인 완료, 변동 ${changes.size}건")
+        Result.success()
+    } catch (e: Exception) {
+        Log.w(TAG, "가격 확인 실패", e)
+        if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+    }
+```
+
+### Step 7: 테스트
+
+`CheckTrackedPricesUseCaseTest`에 세 건을 더한다.
+
+1. **`알림을 확인하기 전에는 기준선이 그대로다`** — 300,000으로 등록된 노선을
+   250,000으로 두 번 연속 폴링한다. `ConfirmNotifiedUseCase`를 부르지 않는다.
+   두 번 다 `Direction.DOWN` 변동이 나와야 한다. 지금 구현에서는 두 번째가 빈 리스트다.
+2. **`확인한 뒤에는 같은 값에 다시 알리지 않는다`** — 위와 같되 1회차 뒤
+   `ConfirmNotifiedUseCase(changes)`를 부른다. 2회차는 빈 리스트여야 한다.
+3. **`관측 이력은 통보와 무관하게 쌓인다`** — 통보를 확인하지 않은 채 두 번 폴링해도
+   `history`에 스냅샷이 2건 쌓여 있어야 한다. 그래프가 알림 성공 여부에 인질로
+   잡히면 안 된다.
+
+`TrackRouteUseCaseTest`에 한 건:
+
+4. **`등록하면 기준선도 함께 심는다`** — 등록 직후 `getAll().first().notifiedPrice`가
+   견적 가격과 같아야 한다.
+
+**1번은 반드시 수정 전에 실패해야 한다.** 통과한다면 결함을 잘못 읽은 것이니 멈추고 보고할 것.
+
+### Step 8: 커밋
+
+```
+fix: 알림이 전달된 뒤에만 변동 기준선을 옮기도록 수정
+```
