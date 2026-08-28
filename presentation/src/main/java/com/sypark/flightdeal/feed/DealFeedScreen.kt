@@ -2,9 +2,11 @@ package com.sypark.flightdeal.feed
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,13 +16,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.ui.theme.Background
+import com.sypark.flightdeal.ui.theme.Indigo
 import com.sypark.flightdeal.ui.theme.Outline
 import com.sypark.flightdeal.ui.theme.Surface
 import com.sypark.flightdeal.ui.theme.TextPrimary
@@ -65,6 +70,24 @@ fun DealFeedScreen(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
 
+        val tripType by viewModel.tripType.collectAsStateWithLifecycle()
+
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TripTypeChip(
+                label = "왕복",
+                selected = tripType == TripType.ROUND_TRIP,
+                onClick = { viewModel.setTripType(TripType.ROUND_TRIP) },
+            )
+            TripTypeChip(
+                label = "편도",
+                selected = tripType == TripType.ONE_WAY,
+                onClick = { viewModel.setTripType(TripType.ONE_WAY) },
+            )
+        }
+
         when (val current = state) {
             DealFeedUiState.Loading -> DealSkeleton()
 
@@ -98,4 +121,21 @@ fun DealFeedScreen(
             )
         }
     }
+}
+
+@Composable
+private fun TripTypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        text = label,
+        color = if (selected) Color.White else TextSecondary,
+        fontSize = 12.sp,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        modifier = Modifier
+            .background(
+                color = if (selected) Indigo else Surface,
+                shape = RoundedCornerShape(20.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    )
 }
