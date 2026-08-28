@@ -116,4 +116,43 @@ class PriceQuoteMapperTest {
         val quotes = response.data!!.mapNotNull { PriceQuoteMapper.toDomain(it, foundAt, "1") }
         assertEquals(20, quotes.size)
     }
+
+    @Test
+    fun `편도 응답의 모든 항목이 온전한 값을 갖는다`() {
+        val quotes = load("v3-ICN-TYO.json").data!!.mapNotNull {
+            PriceQuoteMapper.toDomain(it, foundAt, marker = "123456")
+        }
+
+        // 개수만 세는 검사는 2번째 이후 레코드가 망가져도 통과한다. 전부 훑는다.
+        quotes.forEach { quote ->
+            assertEquals("ICN", quote.route.origin.iata)
+            assertEquals("서울", quote.route.origin.cityKo)
+            assertEquals("TYO", quote.route.destination.iata)
+            assertEquals("도쿄", quote.route.destination.cityKo)
+            assertTrue("가격이 0 이하: ${quote.price.amount}", quote.price.amount > 0)
+            assertEquals(2026, quote.departDate.year)
+            assertEquals(10, quote.departDate.monthValue)
+            assertNotNull(quote.deepLink)
+            assertTrue(quote.deepLink!!.startsWith("https://www.aviasales.com/"))
+            // 항공사 코드가 표에 없으면 코드가 그대로 남는다. 그것도 값이지만
+            // 두 글자짜리 대문자만 남았다면 표를 넓혀야 한다는 신호다.
+            assertNotNull(quote.airline)
+        }
+    }
+
+    @Test
+    fun `왕복 응답의 모든 항목에서 귀국일이 출발일보다 늦다`() {
+        val quotes = load("v3-ICN-TYO-roundtrip.json").data!!.mapNotNull {
+            PriceQuoteMapper.toDomain(it, foundAt, marker = "123456")
+        }
+
+        assertEquals(44, quotes.size)
+        quotes.forEach { quote ->
+            assertNotNull("귀국일이 없다: $quote", quote.returnDate)
+            assertTrue(
+                "귀국일이 출발일보다 빠르다: ${quote.departDate} → ${quote.returnDate}",
+                quote.returnDate!!.isAfter(quote.departDate),
+            )
+        }
+    }
 }
