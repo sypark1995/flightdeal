@@ -1884,6 +1884,99 @@ interface FlightPriceRepository {
 
 ---
 
+## Task 5d: 같은 요청을 두 번 보내지 않기 (Task 5 재리뷰에서 발견)
+
+**Files:**
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepositoryTest.kt`
+
+### 무엇이 잘못됐나
+
+피드 한 번에 같은 요청이 두 번 나간다.
+
+`cheapestDeals`가 목적지마다 그 달 전체를 받아 최저가 하나만 남기고 버린다. 그 직후
+`GetDealFeedUseCase`가 딜마다 `priceStats`를 부르고, 그게 `calendarPrices`를 거쳐
+**방금 버린 것과 완전히 같은 요청**을 다시 보낸다. Task 5b에서 `tripType`을 맞추면서
+두 요청은 이제 바이트 단위로 동일해졌다.
+
+기본 목적지 6개 기준으로 피드 한 번에 12요청이다. 6이면 충분하다.
+레이트 리밋이 걸린 API에서 쿼터를 두 배로 태우고, Task 5c에서 병렬화로 얻은 이득을 절반 깎는다.
+
+### 고침
+
+`fetch`에 짧은 수명의 메모를 둔다. 두 호출이 몇 밀리초 간격으로 같은 키를 요청하므로
+짧은 TTL만으로 중복이 사라진다. 서버 쪽 데이터 자체가 7일 캐시라 몇 분 묵어도 문제없다.
+
+```kotlin
+    private data class CacheKey(
+        val origin: String,
+        val destination: String,
+        val month: YearMonth,
+        val tripType: TripType,
+    )
+
+    private class CacheEntry(val storedAt: Instant, val quotes: List<GatedQuote>)
+
+    private val cache = ConcurrentHashMap<CacheKey, CacheEntry>()
+```
+
+`fetch`의 맨 앞과 맨 끝에 넣는다.
+
+```kotlin
+        val key = CacheKey(originIata, destinationIata, month, tripType)
+        val now = clock.instant()
+
+        cache[key]?.let { cached ->
+            if (Duration.between(cached.storedAt, now) < CACHE_TTL) return cached.quotes
+        }
+
+        // ... 기존 조회와 매핑 ...
+
+        // 만료된 항목은 쓸 때 함께 치운다. 별도 청소 작업을 두지 않는다.
+        cache.entries.removeIf { Duration.between(it.value.storedAt, now) >= CACHE_TTL }
+        cache[key] = CacheEntry(now, quotes)
+        return quotes
+```
+
+`companion object`에 추가한다.
+
+```kotlin
+        /**
+         * 피드 한 번에 cheapestDeals와 priceStats가 같은 요청을 연달아 보낸다.
+         * 그 간격만 덮으면 되므로 길 필요가 없다. 소스 데이터 자체가 7일 캐시다.
+         */
+        private val CACHE_TTL: Duration = Duration.ofMinutes(5)
+```
+
+`java.time.Duration`, `java.util.concurrent.ConcurrentHashMap` import를 추가한다.
+
+### 테스트
+
+```kotlin
+    @Test
+    fun `같은 요청을 연달아 보내면 한 번만 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        repository.priceStats(route, YearMonth.now(clock).plusMonths(2), TripType.ONE_WAY)
+
+        // 응답을 하나만 큐에 넣었다. 캐시가 없으면 두 번째 호출이 응답을 기다리다 실패한다.
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `여정 종류가 다르면 따로 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+        enqueueFixture("v3-ICN-TYO-roundtrip.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ROUND_TRIP)
+
+        // 편도와 왕복은 다른 운임이다. 같은 캐시를 쓰면 안 된다.
+        assertEquals(2, server.requestCount)
+    }
+```
+
 ## 완료 기준
 
 - [ ] `RepositoryModule` 한 파일만 바꿔서 Fake ↔ 실데이터가 전환된다
@@ -1894,7 +1987,7 @@ interface FlightPriceRepository {
 - [ ] 딥링크에 marker가 붙는다 (마커 미발급 상태에서도 링크는 열린다)
 - [ ] `:domain`에 Travelpayouts라는 단어가 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 32, `:data` 46, `:presentation` 13
+- [ ] 전체 테스트 통과. `:domain` 33, `:data` 48, `:presentation` 13
 
 ## 다음 계획서
 
