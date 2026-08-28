@@ -6,6 +6,7 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.delay
 import java.io.IOException
@@ -29,9 +30,17 @@ class FakeFlightPriceRepository(
     ): AppResult<List<PriceQuote>> = respond {
         FakeDealFixtures.deals()
             .take(limit)
-            .map { if (tripType == TripType.ONE_WAY) it.copy(returnDate = null) else it }
+            .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
             .takeIf { it.isNotEmpty() }
     }
+
+    /**
+     * 픽스처는 왕복 기준이다. 귀국일만 지우고 가격을 그대로 두면 같은 항공편이
+     * "10만원 편도"이자 "10만원 왕복"이 되어버린다. 실측에서 인천→도쿄 편도는
+     * 왕복의 3분의 1 수준이었으므로 어림잡아 60%로 낮춘다.
+     */
+    private fun PriceQuote.asOneWay(): PriceQuote =
+        copy(returnDate = null, price = Won(price.amount * ONE_WAY_RATIO_PERCENT / 100))
 
     override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
         respond { FakeDealFixtures.monthlyPrices(route, month).takeIf { it.isNotEmpty() } }
@@ -60,5 +69,8 @@ class FakeFlightPriceRepository(
          * 피드 한 번에 조회가 1 + 딜 개수만큼 일어나므로 값을 키우면 체감이 급격히 나빠진다.
          */
         const val NETWORK_DELAY_MS = 150L
+
+        /** 편도는 왕복의 대략 60%. Fake가 편도와 왕복을 같은 값으로 말하지 않게 한다. */
+        const val ONE_WAY_RATIO_PERCENT = 60
     }
 }

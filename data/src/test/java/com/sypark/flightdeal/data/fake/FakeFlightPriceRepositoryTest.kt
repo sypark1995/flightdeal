@@ -110,4 +110,38 @@ class FakeFlightPriceRepositoryTest {
 
         assertTrue(result is AppResult.NetworkError)
     }
+
+    @Test
+    fun `편도를 요청하면 귀국일이 없다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val deals = (repo.cheapestDeals(Airport.INCHEON, 10, TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        assertTrue(deals.isNotEmpty())
+        assertTrue(deals.all { it.returnDate == null })
+    }
+
+    @Test
+    fun `왕복을 요청하면 귀국일이 있다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val deals = (repo.cheapestDeals(Airport.INCHEON, 10, TripType.ROUND_TRIP)
+            as AppResult.Success).data
+
+        assertTrue(deals.all { it.returnDate != null })
+    }
+
+    @Test
+    fun `편도가 왕복보다 싸다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val oneWay = (repo.cheapestDeals(Airport.INCHEON, 1, TripType.ONE_WAY)
+            as AppResult.Success).data.first()
+        val roundTrip = (repo.cheapestDeals(Airport.INCHEON, 1, TripType.ROUND_TRIP)
+            as AppResult.Success).data.first()
+
+        // 같은 값이면 토글을 눌러도 화면이 그대로라 사용자가 고장으로 오해한다.
+        assertTrue(oneWay.price < roundTrip.price)
+    }
 }
