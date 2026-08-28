@@ -20,6 +20,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sypark.flightdeal.calendar.CalendarScreen
 import com.sypark.flightdeal.feed.DealFeedScreen
+import com.sypark.flightdeal.profile.ProfileScreen
 import com.sypark.flightdeal.tracking.TrackingScreen
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,7 +99,7 @@ fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow
             }
             composable(Tab.Tracking.route) { TrackingScreen() }
             composable(Tab.Search.route) { CalendarScreen() }
-            composable(Tab.Profile.route) { PlaceholderScreen() }
+            composable(Tab.Profile.route) { ProfileScreen() }
         }
     }
 }
