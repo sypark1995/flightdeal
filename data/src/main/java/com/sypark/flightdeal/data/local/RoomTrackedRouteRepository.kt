@@ -31,6 +31,7 @@ class RoomTrackedRouteRepository(
         returnDate: LocalDate?,
         tripType: TripType,
         targetPrice: Won?,
+        notifiedPrice: Won?,
     ): Long {
         val entity = TrackedRouteEntity(
             originIata = route.origin.iata,
@@ -40,6 +41,7 @@ class RoomTrackedRouteRepository(
             returnDate = returnDate?.toString().orEmpty(),
             tripType = tripType.name,
             targetPrice = targetPrice?.amount,
+            notifiedPrice = notifiedPrice?.amount,
             createdAt = clock.instant().epochSecond,
         )
 
@@ -61,6 +63,9 @@ class RoomTrackedRouteRepository(
 
     override suspend fun remove(id: Long) = dao.deleteById(id)
 
+    override suspend fun markNotified(id: Long, price: Won) =
+        dao.updateNotifiedPrice(id, price.amount)
+
     /**
      * DB에는 IATA만 저장한다. 도시 이름은 표시용이므로 읽을 때 채운다 —
      * 이름이 바뀌어도 저장된 데이터를 건드릴 일이 없다.
@@ -80,6 +85,7 @@ class RoomTrackedRouteRepository(
             returnDate = returnDate.takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
             tripType = TripType.valueOf(tripType),
             targetPrice = targetPrice?.let(::Won),
+            notifiedPrice = notifiedPrice?.let(::Won),
             createdAt = Instant.ofEpochSecond(createdAt),
         )
     }.onFailure { Log.w(TAG, "읽을 수 없는 추적 항목을 건너뛴다: id=$id", it) }.getOrNull()

@@ -13,7 +13,7 @@ import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
  */
 @Database(
     entities = [TrackedRouteEntity::class, PriceSnapshotEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class FlightDealDatabase : RoomDatabase() {

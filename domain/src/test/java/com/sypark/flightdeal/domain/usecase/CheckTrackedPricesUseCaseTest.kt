@@ -30,32 +30,41 @@ class CheckTrackedPricesUseCaseTest {
     private val clock = Clock.fixed(Instant.parse("2026-08-28T00:00:00Z"), ZoneOffset.UTC)
     private val route = Route(Airport.INCHEON, Airport("TYO", "도쿄", "일본"))
 
-    private fun tracked(id: Long = 1L, target: Won? = null) = TrackedRoute(
+    private fun tracked(id: Long = 1L, target: Won? = null, notifiedPrice: Won? = null) = TrackedRoute(
         id = id,
         route = route,
         departDate = LocalDate.of(2026, 10, 12),
         returnDate = LocalDate.of(2026, 10, 16),
         tripType = TripType.ROUND_TRIP,
         targetPrice = target,
+        notifiedPrice = notifiedPrice,
         createdAt = Instant.EPOCH,
     )
 
-    private class StubRoutes(private val routes: List<TrackedRoute>) : TrackedRouteRepository {
-        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(routes)
-        override suspend fun getAll(): List<TrackedRoute> = routes
+    private class StubRoutes(routes: List<TrackedRoute>) : TrackedRouteRepository {
+        private val state = routes.toMutableList()
+
+        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(state)
+        override suspend fun getAll(): List<TrackedRoute> = state
         override suspend fun add(
             route: Route, departDate: LocalDate, returnDate: LocalDate?,
-            tripType: TripType, targetPrice: Won?,
+            tripType: TripType, targetPrice: Won?, notifiedPrice: Won?,
         ): Long = 1L
         override suspend fun remove(id: Long) = Unit
+        override suspend fun markNotified(id: Long, price: Won) {
+            val index = state.indexOfFirst { it.id == id }
+            if (index != -1) state[index] = state[index].copy(notifiedPrice = price)
+        }
     }
 
+    // latest()는 이미 쓴 스냅샷을 먼저 본다. 초기값 last는 등록 시점의 이력을 흉내낸다.
     private class StubHistory(private val last: PriceSnapshot?) : PriceHistoryRepository {
         val appended = mutableListOf<PriceSnapshot>()
         var pruned = false
 
         override suspend fun append(snapshot: PriceSnapshot) { appended += snapshot }
-        override suspend fun latest(trackedRouteId: Long): PriceSnapshot? = last
+        override suspend fun latest(trackedRouteId: Long): PriceSnapshot? =
+            appended.lastOrNull() ?: last
         override fun observeHistory(trackedRouteId: Long, days: Int) = flowOf(emptyList<PriceSnapshot>())
         override suspend fun pruneOlderThan(days: Int) { pruned = true }
     }
@@ -96,7 +105,8 @@ class CheckTrackedPricesUseCaseTest {
     fun `가격이 내리면 변동을 돌려준다`() = runTest {
         val history = StubHistory(snapshot(300_000))
         val changes = useCase(
-            StubRoutes(listOf(tracked())),
+            // 비교는 이제 기준선(notifiedPrice)과 한다.
+            StubRoutes(listOf(tracked(notifiedPrice = Won(300_000)))),
             history,
             StubPrices(AppResult.Success(Won(280_000))),
         ).invoke()
@@ -199,5 +209,55 @@ class CheckTrackedPricesUseCaseTest {
         assertEquals(LocalDate.of(2026, 10, 12), prices.seenDepartDate)
         assertEquals(LocalDate.of(2026, 10, 16), prices.seenReturnDate)
         assertEquals(TripType.ROUND_TRIP, prices.seenTripType)
+    }
+
+    @Test
+    fun `알림을 확인하기 전에는 기준선이 그대로다`() = runTest {
+        // 300,000으로 등록된 노선. 통보 기준선(notifiedPrice)이 300,000이다.
+        val routes = StubRoutes(listOf(tracked(notifiedPrice = Won(300_000))))
+        val history = StubHistory(snapshot(300_000))
+        val prices = StubPrices(AppResult.Success(Won(250_000)))
+        val useCase = useCase(routes, history, prices)
+
+        val first = useCase.invoke()
+        // ConfirmNotifiedUseCase를 부르지 않는다 — 알림이 전달됐는지 확인하지 않은 채로
+        // 다시 폴링한다.
+        val second = useCase.invoke()
+
+        assertEquals(1, first.size)
+        assertEquals(Direction.DOWN, first.single().direction)
+        // 기준선이 안 옮겨졌으므로 두 번째도 여전히 같은 변동이 잡혀야 한다.
+        assertEquals(1, second.size)
+        assertEquals(Direction.DOWN, second.single().direction)
+    }
+
+    @Test
+    fun `확인한 뒤에는 같은 값에 다시 알리지 않는다`() = runTest {
+        val routes = StubRoutes(listOf(tracked(notifiedPrice = Won(300_000))))
+        val history = StubHistory(snapshot(300_000))
+        val prices = StubPrices(AppResult.Success(Won(250_000)))
+        val useCase = useCase(routes, history, prices)
+
+        val first = useCase.invoke()
+        ConfirmNotifiedUseCase(routes).invoke(first)
+        val second = useCase.invoke()
+
+        // 기준선이 250,000으로 옮겨졌으니 같은 값과는 더 이상 비교에서 변동이 아니다.
+        assertTrue(second.isEmpty())
+    }
+
+    @Test
+    fun `관측 이력은 통보와 무관하게 쌓인다`() = runTest {
+        val routes = StubRoutes(listOf(tracked(notifiedPrice = Won(300_000))))
+        val history = StubHistory(snapshot(300_000))
+        val prices = StubPrices(AppResult.Success(Won(250_000)))
+        val useCase = useCase(routes, history, prices)
+
+        // ConfirmNotifiedUseCase를 부르지 않는다.
+        useCase.invoke()
+        useCase.invoke()
+
+        // 그래프가 알림 성공 여부에 인질로 잡히면 안 된다.
+        assertEquals(2, history.appended.size)
     }
 }

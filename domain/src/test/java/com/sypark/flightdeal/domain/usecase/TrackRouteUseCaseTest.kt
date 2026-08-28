@@ -38,24 +38,38 @@ class TrackRouteUseCaseTest {
         var lastTripType: TripType? = null
         var lastTargetPrice: Won? = null
         var removed: Long? = null
+        private val added = mutableListOf<TrackedRoute>()
 
-        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
-        override suspend fun getAll(): List<TrackedRoute> = emptyList()
+        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(added)
+        override suspend fun getAll(): List<TrackedRoute> = added
         override suspend fun add(
             route: Route,
             departDate: LocalDate,
             returnDate: LocalDate?,
             tripType: TripType,
             targetPrice: Won?,
+            notifiedPrice: Won?,
         ): Long {
             lastRoute = route
             lastDepartDate = departDate
             lastReturnDate = returnDate
             lastTripType = tripType
             lastTargetPrice = targetPrice
-            return 42L
+            val id = 42L
+            added += TrackedRoute(
+                id = id,
+                route = route,
+                departDate = departDate,
+                returnDate = returnDate,
+                tripType = tripType,
+                targetPrice = targetPrice,
+                notifiedPrice = notifiedPrice,
+                createdAt = Instant.EPOCH,
+            )
+            return id
         }
         override suspend fun remove(id: Long) { removed = id }
+        override suspend fun markNotified(id: Long, price: Won) = Unit
     }
 
     private class FakeHistory : PriceHistoryRepository {
@@ -145,5 +159,15 @@ class TrackRouteUseCaseTest {
 
         // 덧쓰면 그게 최신이 되어 다음 비교의 기준선이 리셋된다.
         assertEquals(1, history.appended.size)
+    }
+
+    @Test
+    fun `등록하면 기준선도 함께 심는다`() = runTest {
+        val routes = FakeTrackedRoutes()
+        val useCase = TrackRouteUseCase(routes, FakeHistory())
+
+        useCase(quote, TripType.ROUND_TRIP)
+
+        assertEquals(quote.price, routes.getAll().first().notifiedPrice)
     }
 }

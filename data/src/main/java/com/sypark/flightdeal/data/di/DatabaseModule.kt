@@ -3,6 +3,7 @@ package com.sypark.flightdeal.data.di
 import android.content.Context
 import androidx.room.Room
 import com.sypark.flightdeal.data.local.FlightDealDatabase
+import com.sypark.flightdeal.data.local.MIGRATION_1_2
 import com.sypark.flightdeal.data.local.PriceSnapshotDao
 import com.sypark.flightdeal.data.local.TrackedRouteDao
 import dagger.Module
@@ -20,6 +21,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): FlightDealDatabase =
         Room.databaseBuilder(context, FlightDealDatabase::class.java, "flightdeal.db")
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     // Room은 외래키 강제를 기본으로 켠다. 따로 설정할 필요가 없다.

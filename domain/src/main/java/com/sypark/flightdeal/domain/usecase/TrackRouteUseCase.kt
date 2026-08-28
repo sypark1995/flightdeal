@@ -32,6 +32,9 @@ class TrackRouteUseCase @Inject constructor(
             returnDate = quote.returnDate,
             tripType = tripType,
             targetPrice = targetPrice,
+            // 첫 스냅샷과 같은 값을 기준선으로 심는다. 비워두면 등록 직후 첫 폴링에서
+            // null 대비 비교가 되어 없던 변동이 잡힌다.
+            notifiedPrice = quote.price,
         )
 
         // 이미 추적 중이면 기준선이 있다. 덧쓰면 다음 변동 판정이 어긋난다.

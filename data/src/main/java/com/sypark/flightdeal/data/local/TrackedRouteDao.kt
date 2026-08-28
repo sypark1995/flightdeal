@@ -38,6 +38,10 @@ interface TrackedRouteDao {
     @Update
     suspend fun update(entity: TrackedRouteEntity)
 
+    /** 알림이 실제로 전달된 뒤에만 부른다. */
+    @Query("UPDATE tracked_route SET notifiedPrice = :price WHERE id = :id")
+    suspend fun updateNotifiedPrice(id: Long, price: Int)
+
     @Query("DELETE FROM tracked_route WHERE id = :id")
     suspend fun deleteById(id: Long)
 }

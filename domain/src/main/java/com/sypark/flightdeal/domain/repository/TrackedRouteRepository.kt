@@ -21,7 +21,11 @@ interface TrackedRouteRepository {
         returnDate: LocalDate?,
         tripType: TripType,
         targetPrice: Won?,
+        notifiedPrice: Won? = null,
     ): Long
 
     suspend fun remove(id: Long)
+
+    /** 알림이 실제로 전달된 뒤에만 부른다. */
+    suspend fun markNotified(id: Long, price: Won)
 }

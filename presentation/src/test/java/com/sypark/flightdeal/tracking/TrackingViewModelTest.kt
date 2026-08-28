@@ -45,6 +45,7 @@ class TrackingViewModelTest {
         returnDate = LocalDate.of(2026, 10, 16),
         tripType = TripType.ROUND_TRIP,
         targetPrice = Won(280_000),
+        notifiedPrice = null,
         createdAt = Instant.EPOCH,
     )
 
@@ -59,12 +60,13 @@ class TrackingViewModelTest {
         override suspend fun getAll(): List<TrackedRoute> = state.value
         override suspend fun add(
             route: Route, departDate: LocalDate, returnDate: LocalDate?,
-            tripType: TripType, targetPrice: Won?,
+            tripType: TripType, targetPrice: Won?, notifiedPrice: Won?,
         ): Long = 1L
         override suspend fun remove(id: Long) {
             removed = id
             state.value = state.value.filterNot { it.id == id }
         }
+        override suspend fun markNotified(id: Long, price: Won) = Unit
     }
 
     private class FakeHistory(private val snapshots: List<PriceSnapshot>) : PriceHistoryRepository {

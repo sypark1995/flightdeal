@@ -30,5 +30,7 @@ data class TrackedRouteEntity(
     val returnDate: String,
     val tripType: String,
     val targetPrice: Int?,
+    /** 사용자가 마지막으로 실제로 통보받은 가격. [com.sypark.flightdeal.domain.model.TrackedRoute.notifiedPrice]. */
+    val notifiedPrice: Int? = null,
     val createdAt: Long,
 )

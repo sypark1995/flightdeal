@@ -2,7 +2,6 @@ package com.sypark.flightdeal.domain.usecase
 
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.Direction
-import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
@@ -31,10 +30,11 @@ class DetectPriceChangesUseCaseTest {
         returnDate = LocalDate.of(2026, 10, 16),
         tripType = TripType.ROUND_TRIP,
         targetPrice = targetPrice,
+        notifiedPrice = null,
         createdAt = Instant.EPOCH,
     )
 
-    private fun snapshot(price: Int) = PriceSnapshot(1L, Won(price), TripType.ROUND_TRIP, Instant.EPOCH)
+    private fun snapshot(price: Int) = Won(price)
 
     @Test
     fun `가격이 내리면 DOWN 변동을 돌려준다`() {

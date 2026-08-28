@@ -337,11 +337,13 @@ class DealFeedViewModelTest {
             returnDate: LocalDate?,
             tripType: TripType,
             targetPrice: Won?,
+            notifiedPrice: Won?,
         ): Long {
             lastTripType = tripType
             return 1L
         }
         override suspend fun remove(id: Long) = Unit
+        override suspend fun markNotified(id: Long, price: Won) = Unit
     }
 
     private class NoopHistory : PriceHistoryRepository {

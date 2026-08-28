@@ -31,19 +31,20 @@ class CheckTrackedPricesUseCase @Inject constructor(
 
     private suspend fun check(tracked: TrackedRoute): PriceChange? {
         val current = currentPrice(tracked) ?: return null
-        val previous = history.latest(tracked.id)
 
+        // 관측 이력은 폴링마다 쌓는다. 추이 그래프의 재료이고, 판정에는 쓰지 않는다.
         history.append(
             PriceSnapshot(
                 trackedRouteId = tracked.id,
                 price = current,
-                // 추적 항목의 종류를 그대로 쓴다. 섞이면 매번 가짜 하락이 뜬다.
                 tripType = tracked.tripType,
                 capturedAt = clock.instant(),
             )
         )
 
-        return detectChanges(tracked, previous, current)
+        // 비교는 마지막으로 통보한 값과 한다. 마지막으로 관측한 값과 비교하면
+        // 알림이 실패했을 때 그 변동이 기준선에 흡수돼 영영 사라진다.
+        return detectChanges(tracked, tracked.notifiedPrice, current)
     }
 
     /** 한 노선이 실패했다고 나머지를 포기하지 않는다. */

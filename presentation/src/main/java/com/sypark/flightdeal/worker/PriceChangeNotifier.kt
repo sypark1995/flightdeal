@@ -22,12 +22,15 @@ class PriceChangeNotifier @Inject constructor(
     /**
      * 한 번의 워커 실행에서 바뀐 것들을 알림 하나로 묶는다.
      * 노선마다 따로 쏘면 추적을 여러 개 걸어둔 사용자에게 알림 폭탄이 된다.
+     *
+     * @return 알림을 실제로 띄웠으면 true. 권한이 없거나 띄울 것이 없으면 false —
+     *   호출부는 이 값을 보고서야 통보 기준선을 옮긴다.
      */
-    fun notify(changes: List<PriceChange>, routes: List<TrackedRoute>) {
-        if (changes.isEmpty()) return
+    fun notify(changes: List<PriceChange>, routes: List<TrackedRoute>): Boolean {
+        if (changes.isEmpty()) return false
 
         ensureChannel()
-        if (!notificationsAllowed()) return
+        if (!notificationsAllowed()) return false
 
         val byId = routes.associateBy { it.id }
         val lines = changes.mapNotNull { change ->
@@ -36,7 +39,7 @@ class PriceChangeNotifier @Inject constructor(
             val target = if (change.reachedTarget) " · 목표가 도달" else ""
             "$arrow ${route.route.destination.cityKo} ${formatWon(change.current)}$target"
         }
-        if (lines.isEmpty()) return
+        if (lines.isEmpty()) return false
 
         val title = if (changes.size == 1) "항공권 가격이 바뀌었어요" else "항공권 ${changes.size}건의 가격이 바뀌었어요"
 
@@ -62,6 +65,7 @@ class PriceChangeNotifier @Inject constructor(
             .build()
 
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        return true
     }
 
     /**

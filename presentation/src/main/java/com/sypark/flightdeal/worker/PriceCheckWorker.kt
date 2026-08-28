@@ -7,6 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import com.sypark.flightdeal.domain.usecase.CheckTrackedPricesUseCase
+import com.sypark.flightdeal.domain.usecase.ConfirmNotifiedUseCase
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -17,11 +18,15 @@ class PriceCheckWorker @AssistedInject constructor(
     private val checkPrices: CheckTrackedPricesUseCase,
     private val trackedRoutes: TrackedRouteRepository,
     private val notifier: PriceChangeNotifier,
+    private val confirmNotified: ConfirmNotifiedUseCase,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = try {
         val changes = checkPrices()
-        notifier.notify(changes, trackedRoutes.getAll())
+        // 전달된 뒤에만 기준선을 옮긴다. 순서가 뒤집히면 알림이 실패한 변동이 사라진다.
+        if (notifier.notify(changes, trackedRoutes.getAll())) {
+            confirmNotified(changes)
+        }
         Log.d(TAG, "가격 확인 완료, 변동 ${changes.size}건")
         Result.success()
     } catch (e: Exception) {
