@@ -21,13 +21,13 @@ object AirlineNames {
         "ZG" to "집에어",
         // 동남아
         "TG" to "타이항공", "VJ" to "비엣젯항공", "VZ" to "타이비엣젯항공",
-        "VN" to "베트남항공", "FD" to "타이에어아시아",
+        "VN" to "베트남항공", "FD" to "타이에어아시아", "WE" to "타이스마일", // 2024년 1월 타이항공에 인수됨, 레거시 데이터에만 존재
         "SQ" to "싱가포르항공", "TR" to "스쿠트", "PR" to "필리핀항공",
         "MH" to "말레이시아항공", "GA" to "가루다인도네시아", "AK" to "에어아시아",
         // 중화권
-        "CI" to "중화항공", "BR" to "에바항공", "CX" to "캐세이퍼시픽",
+        "CI" to "중화항공", "BR" to "에바항공", "IT" to "타이거에어 타이완", "CX" to "캐세이퍼시픽",
         "HX" to "홍콩항공", "UO" to "홍콩익스프레스",
-        "CZ" to "중국남방항공", "MU" to "중국동방항공", "CA" to "중국국제항공",
+        "CZ" to "중국남방항공", "MU" to "중국동방항공", "CA" to "중국국제항공", "SC" to "산둥항공",
     )
 
     fun of(iata: String?): String? = iata?.let { NAMES[it] ?: it }
