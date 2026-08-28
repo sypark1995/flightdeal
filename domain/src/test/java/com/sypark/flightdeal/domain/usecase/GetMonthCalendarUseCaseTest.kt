@@ -33,6 +33,8 @@ class GetMonthCalendarUseCaseTest {
         airline = "대한항공",
         foundAt = Instant.EPOCH,
         deepLink = null,
+        transfers = null,
+        outboundMinutes = null,
     )
 
     /** calendarDeals 응답만 지정하면 되는 최소 스텁. */

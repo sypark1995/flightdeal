@@ -32,6 +32,8 @@ class GetDealFeedUseCaseTest {
         airline = "대한항공",
         foundAt = Instant.EPOCH,
         deepLink = null,
+        transfers = null,
+        outboundMinutes = null,
     )
 
     /** 테스트마다 응답을 지정할 수 있는 최소 스텁. 분포 조회 횟수도 센다. */

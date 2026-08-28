@@ -57,6 +57,8 @@ object FakeDealFixtures {
                 airline = AIRLINES[day % AIRLINES.size],
                 foundAt = Instant.parse("2026-08-28T00:00:00Z"),
                 deepLink = "https://example.com/booking/${route.destination.iata}/$day",
+                transfers = null,
+                outboundMinutes = null,
             )
         }
     }

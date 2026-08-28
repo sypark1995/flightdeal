@@ -32,6 +32,8 @@ class TrackRouteUseCaseTest {
         airline = "제주항공",
         foundAt = Instant.parse("2026-08-28T00:00:00Z"),
         deepLink = null,
+        transfers = null,
+        outboundMinutes = null,
     )
 
     private class FakeTrackedRoutes : TrackedRouteRepository {

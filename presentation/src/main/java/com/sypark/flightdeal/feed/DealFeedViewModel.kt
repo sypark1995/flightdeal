@@ -49,20 +49,27 @@ class DealFeedViewModel @Inject constructor(
     /** 같은 값이면 조회하지 않는다. 토글을 두 번 눌렀다고 왕복을 다시 받을 이유가 없다. */
     fun setTripType(tripType: TripType) {
         if (_tripType.value == tripType) return
+        val previous = _tripType.value
         _tripType.value = tripType
-        refresh()
+        load(revertTripTypeTo = previous)
     }
 
-    fun refresh() {
+    fun refresh() = load(revertTripTypeTo = null)
+
+    private fun load(revertTripTypeTo: TripType?) {
         // 재시도 버튼을 연타하면 느린 이전 요청이 나중에 끝나 최신 결과를 덮어쓴다.
         // 결과만 버리는 게 아니라 요청 자체를 취소한다. 버릴 응답을 받자고
         // 네트워크와 배터리를 쓸 이유가 없다.
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.value = DealFeedUiState.Loading
+            // 이미 보여줄 목록이 있으면 Loading으로 되돌리지 않는다. 화면은 데이터를
+            // 보여주던 상태에서 뒤로 가지 않는다 — 스켈레톤이 떴다가 목록이 돌아오는
+            // 깜빡임도 막는다.
+            val hadData = _uiState.value is DealFeedUiState.Success
+            if (!hadData) _uiState.value = DealFeedUiState.Loading
 
             // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
-            _uiState.value = try {
+            val nextState = try {
                 when (val result = getDealFeed(Airport.INCHEON, _tripType.value)) {
                     is AppResult.Success -> DealFeedUiState.Success(result.data)
                     AppResult.Empty -> DealFeedUiState.Empty
@@ -83,7 +90,31 @@ class DealFeedViewModel @Inject constructor(
                 Log.e(TAG, "특가 조회 중 예외 발생", e)
                 DealFeedUiState.Error(retryable = false)
             }
+
+            // 이미 목록이 떠 있는데 이번 조회가 오류로 실패했다면, 오래된 값을
+            // 최신인 것처럼 보여주는 셈이니 목록은 유지하되 실패했다는 사실은
+            // 스낵바로 알린다. Empty는 오류가 아니다 — 목록이 있었다면 조용히
+            // 유지하고(빈 결과로 덮지 않는다), 없었다면 Empty 화면이 맞다.
+            when {
+                hadData && nextState is DealFeedUiState.Error -> {
+                    revertTripType(revertTripTypeTo)
+                    _messages.send("가격을 새로 받아오지 못했어요")
+                }
+                hadData && nextState is DealFeedUiState.Empty -> revertTripType(revertTripTypeTo)
+                else -> _uiState.value = nextState
+            }
         }
+    }
+
+    /**
+     * 목록을 갱신하지 못했으면 토글도 누르기 전으로 되돌린다.
+     *
+     * 목록은 유지하면서 토글만 새 값으로 두면 화면이 "편도"라고 말하면서 왕복 가격을
+     * 보여준다. 표시가 어긋나는 데서 끝나지 않는다 — [track]이 이 값으로 등록하므로
+     * 왕복 견적이 편도로 저장되고, 이후 그 추적 항목의 변동 판정이 전부 어긋난다.
+     */
+    private fun revertTripType(to: TripType?) {
+        if (to != null) _tripType.value = to
     }
 
     /** 지금 화면이 보여주는 여정 종류로 등록한다. 화면과 다른 종류로 저장하면 이후 비교가 어긋난다. */

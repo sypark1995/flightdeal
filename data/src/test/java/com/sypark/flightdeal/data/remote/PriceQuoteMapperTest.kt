@@ -140,6 +140,56 @@ class PriceQuoteMapperTest {
         }
     }
 
+    /** 경유·소요시간 조합만 바꿔가며 검증할 때 나머지 필수 필드를 채워주는 헬퍼. */
+    private fun priceDto(
+        transfers: Int? = 0,
+        returnTransfers: Int? = null,
+        duration: Int? = null,
+        durationTo: Int? = null,
+        durationBack: Int? = null,
+        returnAt: String? = "2026-10-16T10:00:00+09:00",
+    ) = PriceDto(
+        originAirport = "ICN", destination = "TYO",
+        departureAt = "2026-10-06T15:15:00+09:00", returnAt = returnAt, price = 100354,
+        airline = "KE", link = "/search/x",
+        transfers = transfers, returnTransfers = returnTransfers,
+        duration = duration, durationTo = durationTo, durationBack = durationBack,
+    )
+
+    @Test
+    fun `경유 횟수는 가는 편과 오는 편 중 많은 쪽이다`() {
+        // 실제 응답에 있던 조합이다 — 가는 편 직항, 오는 편 1회 경유.
+        val dto = priceDto(transfers = 0, returnTransfers = 1)
+
+        assertEquals(1, PriceQuoteMapper.toDomain(dto, foundAt, "1")!!.transfers)
+    }
+
+    @Test
+    fun `편도면 오는 편 경유는 보지 않는다`() {
+        // 편도 조회에는 return_at이 없다. return_transfers가 0으로 와도 의미가 없다.
+        val dto = priceDto(transfers = 1, returnTransfers = 0, returnAt = null)
+
+        assertEquals(1, PriceQuoteMapper.toDomain(dto, foundAt, "1")!!.transfers)
+    }
+
+    @Test
+    fun `왕복 duration이 아니라 duration_to를 쓴다`() {
+        // 왕복 응답의 duration은 왕복 합계(300 = 150 + 150)다.
+        // 그대로 쓰면 2시간 30분짜리가 5시간으로 보인다.
+        val dto = priceDto(duration = 300, durationTo = 150, durationBack = 150)
+
+        assertEquals(150, PriceQuoteMapper.toDomain(dto, foundAt, "1")!!.outboundMinutes)
+    }
+
+    @Test
+    fun `값이 없으면 null이다`() {
+        val dto = priceDto(transfers = null, durationTo = null)
+        val quote = PriceQuoteMapper.toDomain(dto, foundAt, "1")!!
+
+        assertNull(quote.transfers)
+        assertNull(quote.outboundMinutes)
+    }
+
     @Test
     fun `왕복 응답의 모든 항목에서 귀국일이 출발일보다 늦다`() {
         val quotes = load("v3-ICN-TYO-roundtrip.json").data!!.mapNotNull {
