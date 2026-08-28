@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -63,7 +64,7 @@ class TrackingViewModelTest {
         override suspend fun add(
             route: Route, departDate: LocalDate, returnDate: LocalDate?,
             tripType: TripType, targetPrice: Won?, notifiedPrice: Won?,
-        ): Long = 1L
+        ): TrackRegistration = TrackRegistration(1L, isNew = true)
         override suspend fun remove(id: Long) {
             removed = id
             state.value = state.value.filterNot { it.id == id }

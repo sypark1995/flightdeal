@@ -1,6 +1,7 @@
 package com.sypark.flightdeal.domain.repository
 
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -15,7 +16,9 @@ interface TrackedRouteRepository {
     suspend fun getAll(): List<TrackedRoute>
 
     /**
-     * @return 새로 만들어진 추적 항목의 id
+     * @return 등록 결과. 이미 추적 중이면 새로 만들지 않고 기존 id를 `isNew = false`로
+     *   돌려준다 — 호출한 쪽이 "추적을 시작했어요"와 "이미 추적 중이에요"를 구분해
+     *   안내할 수 있어야 한다.
      *
      * `notifiedPrice`에 기본값을 두지 않는다. 잊고 호출하면 통보 기준선이 NULL인
      * 채로 저장되고, 그 행은 어떤 가격 변동도 영영 판정하지 못하는 죽은 행이 된다.
@@ -27,7 +30,7 @@ interface TrackedRouteRepository {
         tripType: TripType,
         targetPrice: Won?,
         notifiedPrice: Won?,
-    ): Long
+    ): TrackRegistration
 
     suspend fun remove(id: Long)
 

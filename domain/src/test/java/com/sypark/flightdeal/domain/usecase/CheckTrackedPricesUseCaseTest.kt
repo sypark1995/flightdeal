@@ -7,6 +7,7 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -54,7 +55,7 @@ class CheckTrackedPricesUseCaseTest {
         override suspend fun add(
             route: Route, departDate: LocalDate, returnDate: LocalDate?,
             tripType: TripType, targetPrice: Won?, notifiedPrice: Won?,
-        ): Long = 1L
+        ): TrackRegistration = TrackRegistration(1L, isNew = true)
         override suspend fun remove(id: Long) = Unit
         override suspend fun markNotified(id: Long, price: Won) {
             val index = state.indexOfFirst { it.id == id }

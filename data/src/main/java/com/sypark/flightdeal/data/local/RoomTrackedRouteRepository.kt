@@ -5,6 +5,7 @@ import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 import com.sypark.flightdeal.data.remote.AirportNames
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -32,7 +33,7 @@ class RoomTrackedRouteRepository(
         tripType: TripType,
         targetPrice: Won?,
         notifiedPrice: Won?,
-    ): Long {
+    ): TrackRegistration {
         val entity = TrackedRouteEntity(
             originIata = route.origin.iata,
             destinationIata = route.destination.iata,
@@ -48,16 +49,18 @@ class RoomTrackedRouteRepository(
         val inserted = dao.insert(entity)
         // 이미 추적 중이면 새로 만들지 않고 그것의 id를 돌려준다.
         // 등록을 멱등하게 두면 버튼을 두 번 눌러도 카드가 하나만 남는다.
+        // dao.insert가 이미 새로 만들어졌는지를 알고 있다 — 버리지 말고 그대로 돌려준다.
         return if (inserted != -1L) {
-            inserted
+            TrackRegistration(inserted, isNew = true)
         } else {
-            dao.findId(
+            val id = dao.findId(
                 origin = entity.originIata,
                 destination = entity.destinationIata,
                 departDate = entity.departDate,
                 returnDate = entity.returnDate,
                 tripType = entity.tripType,
             ) ?: error("중복이라 했는데 찾을 수 없다")
+            TrackRegistration(id, isNew = false)
         }
     }
 

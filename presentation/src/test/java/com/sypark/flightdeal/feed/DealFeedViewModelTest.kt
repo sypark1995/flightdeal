@@ -8,6 +8,7 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -328,6 +329,7 @@ class DealFeedViewModelTest {
 
     private class RecordingTrackedRoutes : TrackedRouteRepository {
         var lastTripType: TripType? = null
+        var isNew = true
 
         override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
         override suspend fun getAll(): List<TrackedRoute> = emptyList()
@@ -338,9 +340,9 @@ class DealFeedViewModelTest {
             tripType: TripType,
             targetPrice: Won?,
             notifiedPrice: Won?,
-        ): Long {
+        ): TrackRegistration {
             lastTripType = tripType
-            return 1L
+            return TrackRegistration(1L, isNew)
         }
         override suspend fun remove(id: Long) = Unit
         override suspend fun markNotified(id: Long, price: Won) = Unit
@@ -352,5 +354,95 @@ class DealFeedViewModelTest {
         override fun observeHistory(trackedRouteId: Long, days: Int) =
             flowOf(emptyList<PriceSnapshot>())
         override suspend fun pruneOlderThan(days: Int) = Unit
+    }
+
+    private class ThrowingTrackedRoutes : TrackedRouteRepository {
+        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
+        override suspend fun getAll(): List<TrackedRoute> = emptyList()
+        override suspend fun add(
+            route: Route,
+            departDate: LocalDate,
+            returnDate: LocalDate?,
+            tripType: TripType,
+            targetPrice: Won?,
+            notifiedPrice: Won?,
+        ): TrackRegistration = throw IOException("boom")
+        override suspend fun remove(id: Long) = Unit
+        override suspend fun markNotified(id: Long, price: Won) = Unit
+    }
+
+    @Test
+    fun `추적에 성공하고 새로 등록됐으면 시작했다고 알린다`() = runTest {
+        val routes = RecordingTrackedRoutes().apply { isNew = true }
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(FakeFlightPriceRepository(), CalculateDiscountUseCase()),
+            trackRoute = TrackRouteUseCase(routes, NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        viewModel.messages.test {
+            viewModel.track(deal)
+
+            assertEquals("추적을 시작했어요", awaitItem())
+        }
+    }
+
+    @Test
+    fun `이미 추적 중인 딜을 다시 누르면 이미 추적 중이라고 알린다`() = runTest {
+        val routes = RecordingTrackedRoutes().apply { isNew = false }
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(FakeFlightPriceRepository(), CalculateDiscountUseCase()),
+            trackRoute = TrackRouteUseCase(routes, NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        viewModel.messages.test {
+            viewModel.track(deal)
+
+            assertEquals("이미 추적 중이에요", awaitItem())
+        }
+    }
+
+    @Test
+    fun `추적에 실패하면 실패했다고 알린다`() = runTest {
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(FakeFlightPriceRepository(), CalculateDiscountUseCase()),
+            trackRoute = TrackRouteUseCase(ThrowingTrackedRoutes(), NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        viewModel.messages.test {
+            viewModel.track(deal)
+
+            assertEquals("추적을 시작하지 못했어요", awaitItem())
+        }
+    }
+
+    @Test
+    fun `메시지는 회전 뒤 다시 보이지 않는다`() = runTest {
+        // StateFlow였다면 마지막 메시지를 다시 replay해 방금 튀어나온 것처럼 보인다.
+        // Channel은 한 번 받으면 사라지므로 새 구독자(회전 뒤 재구독을 흉내낸다)는
+        // 과거 메시지를 못 본다.
+        val routes = RecordingTrackedRoutes().apply { isNew = true }
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(FakeFlightPriceRepository(), CalculateDiscountUseCase()),
+            trackRoute = TrackRouteUseCase(routes, NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        // 첫 구독(회전 전 화면)이 메시지를 받고 끝난다.
+        viewModel.messages.test {
+            viewModel.track(deal)
+            assertEquals("추적을 시작했어요", awaitItem())
+        }
+
+        // 회전으로 다시 구독한 새 화면은 지난 메시지를 다시 보면 안 된다.
+        viewModel.messages.test {
+            expectNoEvents()
+        }
     }
 }
