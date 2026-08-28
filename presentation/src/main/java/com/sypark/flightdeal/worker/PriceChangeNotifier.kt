@@ -74,9 +74,21 @@ class PriceChangeNotifier @Inject constructor(
      * `POST_NOTIFICATIONS`를 직접 확인하면 안 된다. 그 권한은 API 33부터 존재하고,
      * minSdk 26~32에서는 시스템이 모르는 권한이라 항상 거부로 나온다.
      * 정작 그 버전들은 런타임 권한 자체가 필요 없는데도 알림이 전부 버려진다.
+     *
+     * 앱 전체 스위치와 채널 스위치를 모두 본다.
+     *
+     * `areNotificationsEnabled()`만 보면 안 된다. 사용자가 "가격 변동" 채널 하나만 끈
+     * 경우에도 참을 돌려주는데, 그 상태에서 `notify()`는 조용히 버려진다. 그걸 성공으로
+     * 보고하면 워커가 기준선을 옮기고, 알리지 못한 변동이 영영 사라진다.
      */
-    private fun notificationsAllowed(): Boolean =
-        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    private fun notificationsAllowed(): Boolean {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        val channel = context.getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(CHANNEL_ID)
+        // channel == null은 ensureChannel()이 방금 만들었는데도 조회가 실패했다는 뜻이다.
+        // 사용자가 끈 것이 아니라 조회 실패이므로 허용으로 본다.
+        return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
+    }
 
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
