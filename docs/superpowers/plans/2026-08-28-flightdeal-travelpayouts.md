@@ -288,7 +288,10 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :domain:test :data:test :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 32(31+1), `:data` 23(20+3), `:presentation` 10. BUILD SUCCESSFUL.
+기대: `:domain` 32(31+1), `:data` 13(10+3), `:presentation` 10. BUILD SUCCESSFUL.
+
+`:data`는 debug와 release 유닛테스트를 둘 다 돌린다. 결과 XML 디렉터리가 두 개이므로
+둘을 합산해 세면 개수가 두 배로 부풀려진다. `testDebugUnitTest` 하나만 센다.
 
 - [ ] **Step 9: 커밋**
 
@@ -770,7 +773,7 @@ object DeepLinkBuilder {
 ./gradlew :data:test
 ```
 
-기대: PASS (기존 20 + GatePolicy 6 + DeepLink 5 = 31건)
+기대: PASS (기존 13 + GatePolicy 6 + DeepLink 5 = 24건)
 
 - [ ] **Step 10: 커밋**
 
@@ -1035,7 +1038,7 @@ object AirportNames {
 ./gradlew :data:test
 ```
 
-기대: PASS (31 + 매퍼 10 = 41건)
+기대: PASS (24 + 매퍼 10 = 34건)
 
 - [ ] **Step 7: 커밋**
 
@@ -1363,7 +1366,7 @@ class TravelpayoutsFlightPriceRepository(
 ./gradlew :data:test
 ```
 
-기대: PASS (41 + Repository 9 = 50건)
+기대: PASS (34 + Repository 9 = 43건)
 
 - [ ] **Step 5: 커밋**
 
@@ -1666,7 +1669,7 @@ git commit -m "feat: 특가 피드에 왕복·편도 전환 추가"
 - [ ] 딥링크에 marker가 붙는다 (마커 미발급 상태에서도 링크는 열린다)
 - [ ] `:domain`에 Travelpayouts라는 단어가 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 32, `:data` 53, `:presentation` 13
+- [ ] 전체 테스트 통과. `:domain` 32, `:data` 43, `:presentation` 13
 
 ## 다음 계획서
 
