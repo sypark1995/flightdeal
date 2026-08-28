@@ -2008,6 +2008,8 @@ import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -2022,20 +2024,33 @@ class DealFeedViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<DealFeedUiState>(DealFeedUiState.Loading)
     val uiState: StateFlow<DealFeedUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         refresh()
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        // 재시도 버튼을 연타하면 느린 이전 요청이 나중에 끝나 최신 결과를 덮어쓴다.
+        // 새 요청을 시작하기 전에 이전 요청을 버린다.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _uiState.value = DealFeedUiState.Loading
 
             // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
-            _uiState.value = when (val result = getDealFeed(Airport.INCHEON)) {
-                is AppResult.Success -> DealFeedUiState.Success(result.data)
-                AppResult.Empty -> DealFeedUiState.Empty
-                is AppResult.NetworkError -> DealFeedUiState.Error(retryable = true)
-                is AppResult.Unknown -> DealFeedUiState.Error(retryable = false)
+            _uiState.value = try {
+                when (val result = getDealFeed(Airport.INCHEON)) {
+                    is AppResult.Success -> DealFeedUiState.Success(result.data)
+                    AppResult.Empty -> DealFeedUiState.Empty
+                    is AppResult.NetworkError -> DealFeedUiState.Error(retryable = true)
+                    is AppResult.Unknown -> DealFeedUiState.Error(retryable = false)
+                }
+            } catch (e: CancellationException) {
+                // 취소는 오류가 아니다. 삼키면 취소된 요청이 화면을 오류로 만든다.
+                throw e
+            } catch (e: Throwable) {
+                // Repository 구현체가 AppResult 대신 예외를 던져도 앱이 죽어서는 안 된다.
+                DealFeedUiState.Error(retryable = false)
             }
         }
     }
@@ -2052,7 +2067,7 @@ DataStore에서 읽어온다. 프로덕션 코드가 `:data`의 Fake 픽스처�
 ./gradlew :presentation:testDebugUnitTest
 ```
 
-기대: PASS (4건)
+기대: PASS (7건)
 
 - [ ] **Step 6: 커밋**
 
