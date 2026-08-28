@@ -36,6 +36,14 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    sourceSets {
+        // MigrationTestHelper가 v1 스키마를 열려면 내보낸 JSON을 테스트 asset으로
+        // 찾을 수 있어야 한다. 없으면 무엇을 만들어야 할지 몰라 FileNotFoundException이 난다.
+        getByName("test") {
+            assets.srcDirs("$projectDir/schemas")
+        }
+    }
 }
 
 ksp {
