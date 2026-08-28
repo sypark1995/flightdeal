@@ -118,7 +118,7 @@ fun TrackedRouteCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = item.latest?.let { formatWon(it.price) } ?: "가격을 모으는 중이에요",
+                text = item.latest?.let { formatWon(it.price) } ?: noHistoryMessage(item.hasDeparted),
                 // 지난 여정의 가격은 더는 최신이 아니다. 옅게 낮춰서 구분한다.
                 color = if (item.hasDeparted) FlightDealTheme.colors.textSecondary else FlightDealTheme.colors.textPrimary,
                 fontSize = if (item.latest != null) 21.sp else 13.sp,
@@ -154,8 +154,20 @@ fun TrackedRouteCard(
             PriceChart(
                 snapshots = item.history,
                 targetPrice = item.tracked.targetPrice,
+                hasDeparted = item.hasDeparted,
                 modifier = Modifier.padding(top = 10.dp),
             )
         }
     }
 }
+
+/**
+ * 관측이 하나도 없을 때 가격 자리에 대신 보여줄 문구.
+ *
+ * "가격을 모으는 중이에요"는 앞으로 값이 채워질 거라는 약속이다. 이미 지난 여정은
+ * [com.sypark.flightdeal.domain.usecase.CheckTrackedPricesUseCase]가 더 이상 조회하지
+ * 않으므로 그 약속이 거짓이 된다 — 출발일이 지나기 전에 한 번도 관측되지 않았거나,
+ * `PRICE_HISTORY_RETENTION_DAYS`가 지나 마지막 스냅샷마저 정리된 경우 둘 다 여기 해당한다.
+ */
+private fun noHistoryMessage(hasDeparted: Boolean): String =
+    if (hasDeparted) "지난 여정이라 가격을 모으지 못했어요" else "가격을 모으는 중이에요"

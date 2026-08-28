@@ -88,6 +88,27 @@ class GetMonthCalendarUseCaseTest {
     }
 
     @Test
+    fun `달 밖의 견적은 byDate·cheapestDate·median 어디에도 반영되지 않는다`() = runTest {
+        // 지금은 calendarDeals가 항상 요청한 달의 데이터만 주므로 실제로는 일어나지
+        // 않는다. 그 보장이 깨졌을 때 UseCase가 스스로 걸러내는지를 확인하는
+        // 방어적 테스트다 — 안 걸러지면 다음 달 견적이 이번 달 중앙값에 몰래 투표하고,
+        // cheapestDate가 MonthGrid에 그려지지도 않는 날짜를 가리킬 수 있다.
+        // 값을 훨씬 싸게 둔다 — 걸러내지 못하면 cheapestDate가 이 날짜를 가리키고
+        // median도 이 값에 끌려가야 정상인데, 그렇게 되면 테스트가 실패해 버그를 드러낸다.
+        val outOfMonth = quote(1, 10_000).copy(departDate = month.plusMonths(1).atDay(1))
+        val repo = StubRepository(
+            AppResult.Success(listOf(quote(12, 250_000), outOfMonth)),
+        )
+        val useCase = GetMonthCalendarUseCase(repo)
+
+        val result = useCase(route, month, TripType.ROUND_TRIP) as AppResult.Success
+
+        assertEquals(1, result.data.byDate.size)
+        assertEquals(month.atDay(12), result.data.cheapestDate)
+        assertEquals(Won(250_000), result.data.median)
+    }
+
+    @Test
     fun `값이 하나도 없으면 Empty다`() = runTest {
         // 빈 응답은 오류가 아니다. 한산한 노선은 정상적으로 아무것도 주지 않는다.
         val repo = StubRepository(AppResult.Empty)
