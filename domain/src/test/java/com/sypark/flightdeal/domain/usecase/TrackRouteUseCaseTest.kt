@@ -4,6 +4,7 @@ import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -13,6 +14,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDate
@@ -39,6 +42,7 @@ class TrackRouteUseCaseTest {
         var lastTargetPrice: Won? = null
         var removed: Long? = null
         private val added = mutableListOf<TrackedRoute>()
+        private var nextId = 42L
 
         override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(added)
         override suspend fun getAll(): List<TrackedRoute> = added
@@ -49,13 +53,22 @@ class TrackRouteUseCaseTest {
             tripType: TripType,
             targetPrice: Won?,
             notifiedPrice: Won?,
-        ): Long {
+        ): TrackRegistration {
             lastRoute = route
             lastDepartDate = departDate
             lastReturnDate = returnDate
             lastTripType = tripType
             lastTargetPrice = targetPrice
-            val id = 42L
+
+            // 실제 저장소처럼 같은 노선/날짜/여정 종류로 다시 부르면 새로 만들지 않고
+            // 기존 항목의 id를 돌려준다.
+            val existing = added.firstOrNull {
+                it.route == route && it.departDate == departDate &&
+                    it.returnDate == returnDate && it.tripType == tripType
+            }
+            if (existing != null) return TrackRegistration(existing.id, isNew = false)
+
+            val id = nextId++
             added += TrackedRoute(
                 id = id,
                 route = route,
@@ -66,7 +79,7 @@ class TrackRouteUseCaseTest {
                 notifiedPrice = notifiedPrice,
                 createdAt = Instant.EPOCH,
             )
-            return id
+            return TrackRegistration(id, isNew = true)
         }
         override suspend fun remove(id: Long) { removed = id }
         override suspend fun markNotified(id: Long, price: Won) = Unit
@@ -86,7 +99,7 @@ class TrackRouteUseCaseTest {
     fun `등록하면 추적 항목의 id를 돌려준다`() = runTest {
         val useCase = TrackRouteUseCase(FakeTrackedRoutes(), FakeHistory())
 
-        assertEquals(42L, useCase(quote, TripType.ROUND_TRIP))
+        assertEquals(42L, useCase(quote, TripType.ROUND_TRIP).id)
     }
 
     @Test
@@ -169,5 +182,17 @@ class TrackRouteUseCaseTest {
         useCase(quote, TripType.ROUND_TRIP)
 
         assertEquals(quote.price, routes.getAll().first().notifiedPrice)
+    }
+
+    @Test
+    fun `이미 추적 중이면 새것이 아니라고 알린다`() = runTest {
+        val useCase = TrackRouteUseCase(FakeTrackedRoutes(), FakeHistory())
+
+        val first = useCase(quote, TripType.ROUND_TRIP)
+        val second = useCase(quote, TripType.ROUND_TRIP)
+
+        assertTrue(first.isNew)
+        assertFalse(second.isNew)
+        assertEquals(first.id, second.id)
     }
 }

@@ -56,7 +56,7 @@ class RoomTrackedRouteRepositoryTest {
         tripType = tripType,
         targetPrice = Won(280_000),
         notifiedPrice = null,
-    )
+    ).id
 
     @Test
     fun `등록한 노선을 도메인 모델로 되돌려준다`() = runTest {
@@ -214,8 +214,18 @@ class RoomTrackedRouteRepositoryTest {
 
         // SQLite의 유니크 인덱스는 NULL을 서로 다른 값으로 본다.
         // 편도의 귀국일을 NULL로 저장하면 중복이 그대로 쌓인다.
-        assertEquals(first, second)
+        assertEquals(first.id, second.id)
         assertEquals(1, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `등록 결과가 새로 만들어졌는지 알려준다`() = runTest {
+        val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null, null)
+        val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null, null)
+
+        // 화면이 "추적을 시작했어요"와 "이미 추적 중이에요"를 구분할 근거다.
+        assertEquals(true, first.isNew)
+        assertEquals(false, second.isNew)
     }
 
     @Test

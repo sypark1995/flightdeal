@@ -100,6 +100,9 @@ fun TrackedRouteCard(
                     append(item.tracked.departDate)
                     item.tracked.returnDate?.let { append(" – $it") }
                     append(if (item.tracked.tripType == TripType.ROUND_TRIP) " · 왕복" else " · 편도")
+                    // 지난 여정은 더 조회하지 않는다. 화면에서도 밝혀야 마지막 가격을
+                    // 최신으로 오해하지 않는다.
+                    if (item.hasDeparted) append(" · 지난 여정")
                 },
                 color = TextSecondary,
                 fontSize = 11.sp,
@@ -120,14 +123,17 @@ fun TrackedRouteCard(
         ) {
             Text(
                 text = item.latest?.let { formatWon(it.price) } ?: "가격을 모으는 중이에요",
-                color = TextPrimary,
+                // 지난 여정의 가격은 더는 최신이 아니다. 옅게 낮춰서 구분한다.
+                color = if (item.hasDeparted) TextSecondary else TextPrimary,
                 fontSize = if (item.latest != null) 21.sp else 13.sp,
                 fontWeight = FontWeight.Bold,
             )
 
             val latest = item.latest
             val previous = item.previous
-            if (latest != null && previous != null && latest.price != previous.price) {
+            // 지난 여정은 더 조회하지 않으니 변동도 없다. 화살표를 보이면 마치
+            // 방금 가격이 움직인 것처럼 오해하게 된다.
+            if (!item.hasDeparted && latest != null && previous != null && latest.price != previous.price) {
                 val dropped = latest.price < previous.price
                 Text(
                     // 색이 정보를 나른다. 하락은 항상 초록, 상승은 항상 빨강.

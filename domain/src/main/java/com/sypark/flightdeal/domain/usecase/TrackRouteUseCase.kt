@@ -2,6 +2,7 @@ package com.sypark.flightdeal.domain.usecase
 
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
@@ -19,14 +20,15 @@ class TrackRouteUseCase @Inject constructor(
      * 첫 스냅샷을 남기지 않으면 워커가 처음 도는 6시간 뒤까지 비교 대상이 없어
      * 아무 변동도 감지하지 못한다.
      *
-     * @return 새 추적 항목의 id
+     * @return 등록 결과. 이미 추적 중이던 노선이면 `isNew = false`로 돌아온다 —
+     *   화면이 "추적을 시작했어요"와 "이미 추적 중이에요"를 구분해 보여줄 근거다.
      */
     suspend operator fun invoke(
         quote: PriceQuote,
         tripType: TripType,
         targetPrice: Won? = null,
-    ): Long {
-        val id = trackedRoutes.add(
+    ): TrackRegistration {
+        val registration = trackedRoutes.add(
             route = quote.route,
             departDate = quote.departDate,
             returnDate = quote.returnDate,
@@ -39,10 +41,10 @@ class TrackRouteUseCase @Inject constructor(
 
         // 이미 추적 중이면 기준선이 있다. 덧쓰면 다음 변동 판정이 어긋난다.
         // 등록은 됐는데 스냅샷 쓰기가 실패했던 노선은 여기서 채워진다.
-        if (history.latest(id) == null) {
+        if (history.latest(registration.id) == null) {
             history.append(
                 PriceSnapshot(
-                    trackedRouteId = id,
+                    trackedRouteId = registration.id,
                     price = quote.price,
                     tripType = tripType,
                     capturedAt = quote.foundAt,
@@ -50,6 +52,6 @@ class TrackRouteUseCase @Inject constructor(
             )
         }
 
-        return id
+        return registration
     }
 }

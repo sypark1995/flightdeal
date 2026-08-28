@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -25,8 +26,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TrackingViewModelTest {
@@ -61,7 +64,7 @@ class TrackingViewModelTest {
         override suspend fun add(
             route: Route, departDate: LocalDate, returnDate: LocalDate?,
             tripType: TripType, targetPrice: Won?, notifiedPrice: Won?,
-        ): Long = 1L
+        ): TrackRegistration = TrackRegistration(1L, isNew = true)
         override suspend fun remove(id: Long) {
             removed = id
             state.value = state.value.filterNot { it.id == id }
@@ -77,10 +80,14 @@ class TrackingViewModelTest {
         override suspend fun pruneOlderThan(days: Int) = Unit
     }
 
+    // 기존 테스트의 tracked()는 2026-10-12 출발이다. 이보다 이른 고정 시각을 써서
+    // hasDeparted가 이 테스트들에서는 항상 false가 되게 한다.
+    private val clock = Clock.fixed(Instant.parse("2026-08-28T00:00:00Z"), ZoneOffset.UTC)
+
     private fun viewModel(
         routes: TrackedRouteRepository,
         history: PriceHistoryRepository,
-    ) = TrackingViewModel(routes, history, UntrackRouteUseCase(routes))
+    ) = TrackingViewModel(routes, history, UntrackRouteUseCase(routes), clock)
 
     @Test
     fun `추적 항목이 없으면 빈 상태다`() = runTest {
@@ -183,6 +190,34 @@ class TrackingViewModelTest {
             val updated = (awaitItem() as TrackingUiState.Success).items.single()
             assertEquals(Won(280_000), updated.latest!!.price)
             assertEquals(Won(300_000), updated.previous!!.price)
+        }
+    }
+
+    @Test
+    fun `출발일이 지나면 지난 여정으로 표시한다`() = runTest {
+        val pastClock = Clock.fixed(Instant.parse("2026-10-20T00:00:00Z"), ZoneOffset.UTC)
+        val vm = TrackingViewModel(
+            FakeRoutes(listOf(tracked())), // departDate = 2026-10-12
+            FakeHistory(listOf(snapshot(300_000, 100))),
+            UntrackRouteUseCase(FakeRoutes(listOf(tracked()))),
+            pastClock,
+        )
+
+        vm.uiState.test {
+            awaitItem()
+            val item = (awaitItem() as TrackingUiState.Success).items.single()
+
+            assertTrue(item.hasDeparted)
+        }
+    }
+
+    @Test
+    fun `출발일이 지나지 않으면 지난 여정이 아니다`() = runTest {
+        viewModel(FakeRoutes(listOf(tracked())), FakeHistory(listOf(snapshot(300_000, 100)))).uiState.test {
+            awaitItem()
+            val item = (awaitItem() as TrackingUiState.Success).items.single()
+
+            assertTrue(!item.hasDeparted)
         }
     }
 

@@ -7,6 +7,7 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackRegistration
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
@@ -30,10 +31,15 @@ class CheckTrackedPricesUseCaseTest {
     private val clock = Clock.fixed(Instant.parse("2026-08-28T00:00:00Z"), ZoneOffset.UTC)
     private val route = Route(Airport.INCHEON, Airport("TYO", "도쿄", "일본"))
 
-    private fun tracked(id: Long = 1L, target: Won? = null, notifiedPrice: Won? = null) = TrackedRoute(
+    private fun tracked(
+        id: Long = 1L,
+        target: Won? = null,
+        notifiedPrice: Won? = null,
+        departDate: LocalDate = LocalDate.of(2026, 10, 12),
+    ) = TrackedRoute(
         id = id,
         route = route,
-        departDate = LocalDate.of(2026, 10, 12),
+        departDate = departDate,
         returnDate = LocalDate.of(2026, 10, 16),
         tripType = TripType.ROUND_TRIP,
         targetPrice = target,
@@ -49,7 +55,7 @@ class CheckTrackedPricesUseCaseTest {
         override suspend fun add(
             route: Route, departDate: LocalDate, returnDate: LocalDate?,
             tripType: TripType, targetPrice: Won?, notifiedPrice: Won?,
-        ): Long = 1L
+        ): TrackRegistration = TrackRegistration(1L, isNew = true)
         override suspend fun remove(id: Long) = Unit
         override suspend fun markNotified(id: Long, price: Won) {
             val index = state.indexOfFirst { it.id == id }
@@ -75,6 +81,7 @@ class CheckTrackedPricesUseCaseTest {
         var seenDepartDate: LocalDate? = null
         var seenReturnDate: LocalDate? = null
         var seenTripType: TripType? = null
+        var trackedPriceCalls = 0
 
         override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) =
             AppResult.Empty
@@ -85,6 +92,7 @@ class CheckTrackedPricesUseCaseTest {
         override suspend fun trackedPrice(
             route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
         ): AppResult<Won> {
+            trackedPriceCalls++
             seenDepartDate = departDate
             seenReturnDate = returnDate
             seenTripType = tripType
@@ -278,5 +286,42 @@ class CheckTrackedPricesUseCaseTest {
 
         // 그래프가 알림 성공 여부에 인질로 잡히면 안 된다.
         assertEquals(2, history.appended.size)
+    }
+
+    @Test
+    fun `출발일이 지난 여정은 조회하지 않는다`() = runTest {
+        // 지난 날짜를 계속 조회하면 API 쿼터만 쓰고 매번 빈 응답이 온다.
+        val clock = Clock.fixed(Instant.parse("2026-10-20T00:00:00Z"), ZoneOffset.UTC)
+        val stubPrices = StubPrices(AppResult.Success(Won(280_000)))
+        val useCase = CheckTrackedPricesUseCase(
+            StubRoutes(listOf(tracked(departDate = LocalDate.of(2026, 10, 10)))),
+            StubHistory(snapshot(300_000)),
+            stubPrices,
+            DetectPriceChangesUseCase(),
+            clock,
+        )
+
+        val changes = useCase()
+
+        assertTrue(changes.isEmpty())
+        assertEquals("지난 여정은 조회조차 하지 않아야 한다", 0, stubPrices.trackedPriceCalls)
+    }
+
+    @Test
+    fun `출발일이 오늘이면 아직 조회한다`() = runTest {
+        // 당일 출발도 아직 탈 수 있다. 경계에서 하루 일찍 끊으면 안 된다.
+        val clock = Clock.fixed(Instant.parse("2026-10-10T00:00:00Z"), ZoneOffset.UTC)
+        val stubPrices = StubPrices(AppResult.Success(Won(280_000)))
+        val useCase = CheckTrackedPricesUseCase(
+            StubRoutes(listOf(tracked(departDate = LocalDate.of(2026, 10, 10)))),
+            StubHistory(snapshot(300_000)),
+            stubPrices,
+            DetectPriceChangesUseCase(),
+            clock,
+        )
+
+        useCase()
+
+        assertEquals(1, stubPrices.trackedPriceCalls)
     }
 }

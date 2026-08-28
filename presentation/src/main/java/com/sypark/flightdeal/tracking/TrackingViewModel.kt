@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Clock
+import java.time.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
@@ -25,6 +27,7 @@ class TrackingViewModel @Inject constructor(
     trackedRoutes: TrackedRouteRepository,
     private val history: PriceHistoryRepository,
     private val untrackRoute: UntrackRouteUseCase,
+    private val clock: Clock,
 ) : ViewModel() {
 
     /**
@@ -68,6 +71,8 @@ class TrackingViewModel @Inject constructor(
                 // 그래프는 마지막 두 점이 아니라 이미 가져온 전체 이력을 그대로 쓴다.
                 // 조회를 새로 추가하면 같은 데이터를 두 번 읽게 된다.
                 history = recent,
+                // LocalDate.now()를 직접 부르면 테스트에서 고정할 수 없다.
+                hasDeparted = hasDeparted(LocalDate.now(clock)),
             )
         }
 }
