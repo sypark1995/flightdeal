@@ -1,5 +1,6 @@
 package com.sypark.flightdeal.tracking
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +42,7 @@ fun TrackedRouteCard(
     modifier: Modifier = Modifier,
 ) {
     var showConfirm by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
 
     if (showConfirm) {
         AlertDialog(
@@ -61,6 +63,9 @@ fun TrackedRouteCard(
         modifier = modifier
             .fillMaxWidth()
             .border(1.dp, Outline, RoundedCornerShape(16.dp))
+            // 펼침/접힘 사이에 카드 높이가 애니메이션으로 변한다.
+            .animateContentSize()
+            .clickable { expanded = !expanded }
             .padding(horizontal = 14.dp, vertical = 13.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -84,16 +89,29 @@ fun TrackedRouteCard(
             )
         }
 
-        Text(
-            text = buildString {
-                append(item.tracked.departDate)
-                item.tracked.returnDate?.let { append(" – $it") }
-                append(if (item.tracked.tripType == TripType.ROUND_TRIP) " · 왕복" else " · 편도")
-            },
-            color = TextSecondary,
-            fontSize = 11.sp,
-            modifier = Modifier.padding(top = 3.dp),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = buildString {
+                    append(item.tracked.departDate)
+                    item.tracked.returnDate?.let { append(" – $it") }
+                    append(if (item.tracked.tripType == TripType.ROUND_TRIP) " · 왕복" else " · 편도")
+                },
+                color = TextSecondary,
+                fontSize = 11.sp,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            // 펼침 여부를 알려주는 화살표. 카드 전체가 클릭 대상이라 별도 클릭 처리는 없다.
+            Text(
+                text = if (expanded) "▴" else "▾",
+                color = TextSecondary,
+                fontSize = 11.sp,
+            )
+        }
 
         Row(
             modifier = Modifier.padding(top = 9.dp),
@@ -127,6 +145,14 @@ fun TrackedRouteCard(
                 color = TextSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        if (expanded) {
+            PriceChart(
+                snapshots = item.history,
+                targetPrice = item.tracked.targetPrice,
+                modifier = Modifier.padding(top = 10.dp),
             )
         }
     }
