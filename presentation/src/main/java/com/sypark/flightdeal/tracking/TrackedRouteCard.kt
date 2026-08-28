@@ -9,11 +9,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,6 +40,23 @@ fun TrackedRouteCard(
     onUntrack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showConfirm by remember { mutableStateOf(false) }
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text("추적을 해제할까요?") },
+            // 이력까지 사라진다는 걸 분명히 말한다. 되돌릴 수 없다.
+            text = { Text("${item.tracked.route.destination.cityKo} 노선의 추적을 해제하면 지금까지 모은 가격 이력도 함께 지워져요.") },
+            confirmButton = {
+                TextButton(onClick = { showConfirm = false; onUntrack() }) { Text("해제") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirm = false }) { Text("취소") }
+            },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -49,7 +75,12 @@ fun TrackedRouteCard(
                 text = "해제",
                 color = TextSecondary,
                 fontSize = 12.sp,
-                modifier = Modifier.clickable(onClick = onUntrack).padding(4.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { showConfirm = true }
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .wrapContentSize(Alignment.Center)
+                    .padding(horizontal = 8.dp),
             )
         }
 
