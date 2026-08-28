@@ -46,14 +46,19 @@ class TravelpayoutsFlightPriceRepository(
     override suspend fun calendarPrices(
         route: Route,
         month: YearMonth,
+        tripType: TripType,
     ): AppResult<List<PriceQuote>> = call {
         // 캘린더는 그날의 최저가를 보여주는 화면이다. 예약처로 거르지 않는다.
-        fetch(route.origin.iata, route.destination.iata, month, TripType.ONE_WAY)
+        fetch(route.origin.iata, route.destination.iata, month, tripType)
             .map { it.quote }
     }
 
-    override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> {
-        return when (val prices = calendarPrices(route, month)) {
+    override suspend fun priceStats(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<PriceStats> {
+        return when (val prices = calendarPrices(route, month, tripType)) {
             is AppResult.Success ->
                 PriceStats.from(prices.data.map { it.price })
                     ?.let { AppResult.Success(it) }

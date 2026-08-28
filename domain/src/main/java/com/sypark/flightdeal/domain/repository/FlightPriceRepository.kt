@@ -20,9 +20,22 @@ interface FlightPriceRepository {
         tripType: TripType,
     ): AppResult<List<PriceQuote>>
 
-    /** 한 노선·한 달의 날짜별 가격. */
-    suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>>
+    /**
+     * 한 노선·한 달의 날짜별 가격.
+     *
+     * @param tripType 왕복 가격을 편도 분포와 비교하면 할인율이 성립하지 않는다.
+     *   비교 대상은 같은 종류의 운임이어야 한다.
+     */
+    suspend fun calendarPrices(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
 
     /** 한 노선·한 달의 가격 분포. 할인율 배지의 기준. */
-    suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats>
+    suspend fun priceStats(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<PriceStats>
 }

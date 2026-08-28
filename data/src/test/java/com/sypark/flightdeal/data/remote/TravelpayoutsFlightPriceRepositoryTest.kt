@@ -129,7 +129,7 @@ class TravelpayoutsFlightPriceRepositoryTest {
     fun `분포는 그 달의 가격들로 계산한다`() = runTest {
         enqueueFixture("v3-ICN-TYO.json")
 
-        val result = repository.priceStats(route, YearMonth.of(2026, 10))
+        val result = repository.priceStats(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
 
         assertTrue(result is AppResult.Success)
         assertEquals(31, (result as AppResult.Success).data.sampleCount)
@@ -139,7 +139,7 @@ class TravelpayoutsFlightPriceRepositoryTest {
     fun `캘린더 조회는 그 달의 날짜별 가격을 돌려준다`() = runTest {
         enqueueFixture("v3-ICN-TYO.json")
 
-        val result = repository.calendarPrices(route, YearMonth.of(2026, 10))
+        val result = repository.calendarPrices(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
 
         assertEquals(31, (result as AppResult.Success).data.size)
     }

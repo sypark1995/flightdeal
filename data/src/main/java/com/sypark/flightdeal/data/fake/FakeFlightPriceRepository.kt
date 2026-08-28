@@ -42,11 +42,25 @@ class FakeFlightPriceRepository(
     private fun PriceQuote.asOneWay(): PriceQuote =
         copy(returnDate = null, price = Won(price.amount * ONE_WAY_RATIO_PERCENT / 100))
 
-    override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
-        respond { FakeDealFixtures.monthlyPrices(route, month).takeIf { it.isNotEmpty() } }
+    override suspend fun calendarPrices(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>> = respond {
+        FakeDealFixtures.monthlyPrices(route, month)
+            .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+            .takeIf { it.isNotEmpty() }
+    }
 
-    override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
-        respond { PriceStats.from(FakeDealFixtures.monthlyPrices(route, month).map { it.price }) }
+    override suspend fun priceStats(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<PriceStats> = respond {
+        val prices = FakeDealFixtures.monthlyPrices(route, month)
+            .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+        PriceStats.from(prices.map { it.price })
+    }
 
     /**
      * 세 조회가 모두 같은 지연과 같은 [Behavior] 규칙을 거치도록 한 곳에 모은다.

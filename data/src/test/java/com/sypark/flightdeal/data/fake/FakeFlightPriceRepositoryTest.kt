@@ -57,7 +57,7 @@ class FakeFlightPriceRepositoryTest {
         val repo = FakeFlightPriceRepository()
         val month = YearMonth.of(2026, 10)
 
-        val result = repo.calendarPrices(tokyoRoute, month)
+        val result = repo.calendarPrices(tokyoRoute, month, TripType.ROUND_TRIP)
 
         assertTrue(result is AppResult.Success)
         val quotes = (result as AppResult.Success).data
@@ -68,8 +68,8 @@ class FakeFlightPriceRepositoryTest {
     fun `calendarPrices는 요청한 달마다 다른 날짜를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
-        val october = (repo.calendarPrices(tokyoRoute, YearMonth.of(2026, 10)) as AppResult.Success).data
-        val november = (repo.calendarPrices(tokyoRoute, YearMonth.of(2026, 11)) as AppResult.Success).data
+        val october = (repo.calendarPrices(tokyoRoute, YearMonth.of(2026, 10), TripType.ROUND_TRIP) as AppResult.Success).data
+        val november = (repo.calendarPrices(tokyoRoute, YearMonth.of(2026, 11), TripType.ROUND_TRIP) as AppResult.Success).data
 
         assertTrue(october.map { it.departDate }.none { it in november.map { q -> q.departDate } })
     }
@@ -79,7 +79,7 @@ class FakeFlightPriceRepositoryTest {
         val repo = FakeFlightPriceRepository()
         val month = YearMonth.of(2026, 10)
 
-        val result = repo.calendarPrices(tokyoRoute, month)
+        val result = repo.calendarPrices(tokyoRoute, month, TripType.ROUND_TRIP)
 
         assertEquals(month.lengthOfMonth(), (result as AppResult.Success).data.size)
     }
@@ -88,7 +88,7 @@ class FakeFlightPriceRepositoryTest {
     fun `priceStats는 Normal 모드에서 Success를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
-        val result = repo.priceStats(tokyoRoute, YearMonth.of(2026, 10))
+        val result = repo.priceStats(tokyoRoute, YearMonth.of(2026, 10), TripType.ROUND_TRIP)
 
         assertTrue(result is AppResult.Success)
     }
@@ -97,7 +97,7 @@ class FakeFlightPriceRepositoryTest {
     fun `priceStats는 EmptyData 모드에서 Empty를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.EmptyData)
 
-        val result = repo.priceStats(tokyoRoute, YearMonth.of(2026, 10))
+        val result = repo.priceStats(tokyoRoute, YearMonth.of(2026, 10), TripType.ROUND_TRIP)
 
         assertEquals(AppResult.Empty, result)
     }
@@ -106,7 +106,7 @@ class FakeFlightPriceRepositoryTest {
     fun `priceStats는 Failing 모드에서 NetworkError를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.Failing)
 
-        val result = repo.priceStats(tokyoRoute, YearMonth.of(2026, 10))
+        val result = repo.priceStats(tokyoRoute, YearMonth.of(2026, 10), TripType.ROUND_TRIP)
 
         assertTrue(result is AppResult.NetworkError)
     }

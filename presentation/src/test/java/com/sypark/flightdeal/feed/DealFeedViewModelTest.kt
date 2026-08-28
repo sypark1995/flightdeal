@@ -113,10 +113,10 @@ class DealFeedViewModelTest {
             return AppResult.Success(listOf(quote(100_000 * current)))
         }
 
-        override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
     }
 
@@ -127,10 +127,10 @@ class DealFeedViewModelTest {
             tripType: TripType,
         ): AppResult<List<PriceQuote>> = throw IOException("boom")
 
-        override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
     }
 
@@ -141,10 +141,10 @@ class DealFeedViewModelTest {
             tripType: TripType,
         ): AppResult<List<PriceQuote>> = AppResult.Unknown(IllegalStateException("boom"))
 
-        override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
     }
 

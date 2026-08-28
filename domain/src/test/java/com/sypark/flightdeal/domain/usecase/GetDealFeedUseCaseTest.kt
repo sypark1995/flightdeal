@@ -43,9 +43,13 @@ class GetDealFeedUseCaseTest {
             private set
 
         override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) = deals
-        override suspend fun calendarPrices(route: Route, month: YearMonth) =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType) =
             AppResult.Success(emptyList<PriceQuote>())
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> {
+        override suspend fun priceStats(
+            route: Route,
+            month: YearMonth,
+            tripType: TripType,
+        ): AppResult<PriceStats> {
             priceStatsCalls++
             return stats
         }
@@ -148,9 +152,9 @@ class GetDealFeedUseCaseTest {
                 seen = tripType
                 return AppResult.Success(listOf(quote(189_000)))
             }
-            override suspend fun calendarPrices(route: Route, month: YearMonth):
+            override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<List<PriceQuote>> = AppResult.Empty
-            override suspend fun priceStats(route: Route, month: YearMonth):
+            override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<PriceStats> = AppResult.Empty
         }
         val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
@@ -158,5 +162,27 @@ class GetDealFeedUseCaseTest {
         useCase(incheon, TripType.ONE_WAY)
 
         assertEquals(TripType.ONE_WAY, seen)
+    }
+
+    @Test
+    fun `분포도 딜과 같은 여정 종류로 조회한다`() = runTest {
+        var statsTripType: TripType? = null
+        val repo = object : FlightPriceRepository {
+            override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) =
+                AppResult.Success(listOf(quote(189_000)))
+            override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<List<PriceQuote>> = AppResult.Empty
+            override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<PriceStats> {
+                statsTripType = tripType
+                return AppResult.Empty
+            }
+        }
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        useCase(incheon, TripType.ROUND_TRIP)
+
+        // 왕복 딜을 편도 분포와 비교하면 배지가 영영 안 뜬다.
+        assertEquals(TripType.ROUND_TRIP, statsTripType)
     }
 }
