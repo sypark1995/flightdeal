@@ -339,6 +339,8 @@ glide = { module = "com.github.bumptech.glide:glide", version.ref = "glide" }
 glide-ksp = { module = "com.github.bumptech.glide:ksp", version.ref = "glide" }
 shimmer = { module = "com.facebook.shimmer:shimmer", version.ref = "shimmer" }
 
+javax-inject = { module = "javax.inject:javax.inject", version = "1" }
+
 junit = { module = "junit:junit", version.ref = "junit" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 
@@ -417,7 +419,7 @@ kotlin {
 
 dependencies {
     api(libs.kotlinx.coroutines.core)
-    implementation("javax.inject:javax.inject:1")
+    implementation(libs.javax.inject)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
