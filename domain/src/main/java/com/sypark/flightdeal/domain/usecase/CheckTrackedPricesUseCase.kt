@@ -1,6 +1,7 @@
 package com.sypark.flightdeal.domain.usecase
 
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.PRICE_HISTORY_RETENTION_DAYS
 import com.sypark.flightdeal.domain.model.PriceChange
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.TrackedRoute
@@ -24,7 +25,7 @@ class CheckTrackedPricesUseCase @Inject constructor(
 
     suspend operator fun invoke(): List<PriceChange> {
         // 이력은 계속 쌓인다. 조회하러 온 김에 치운다.
-        history.pruneOlderThan(HISTORY_DAYS)
+        history.pruneOlderThan(PRICE_HISTORY_RETENTION_DAYS)
 
         return trackedRoutes.getAll().mapNotNull { tracked -> check(tracked) }
     }
@@ -67,8 +68,4 @@ class CheckTrackedPricesUseCase @Inject constructor(
             is AppResult.Success -> result.data
             else -> null
         }
-
-    private companion object {
-        const val HISTORY_DAYS = 90
-    }
 }

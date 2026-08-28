@@ -2,6 +2,7 @@ package com.sypark.flightdeal.tracking
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sypark.flightdeal.domain.model.PRICE_HISTORY_RETENTION_DAYS
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
@@ -58,7 +59,7 @@ class TrackingViewModel @Inject constructor(
      * null이고 화살표는 정당하게 사라진다.
      */
     private fun TrackedRoute.itemFlow(): Flow<TrackedItem> =
-        history.observeHistory(id, HISTORY_DAYS).map { recent ->
+        history.observeHistory(id, PRICE_HISTORY_RETENTION_DAYS).map { recent ->
             val latest = recent.lastOrNull()
             TrackedItem(
                 tracked = this,
@@ -66,8 +67,4 @@ class TrackingViewModel @Inject constructor(
                 previous = recent.dropLast(1).lastOrNull { it.price != latest?.price },
             )
         }
-
-    private companion object {
-        const val HISTORY_DAYS = 90
-    }
 }
