@@ -206,12 +206,70 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
     ): AppResult<List<PriceQuote>> = respond {
         FakeDealFixtures.deals()
             .take(limit)
-            .map { if (tripType == TripType.ONE_WAY) it.copy(returnDate = null) else it }
+            .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
             .takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * 픽스처는 왕복 기준이다. 귀국일만 지우고 가격을 그대로 두면 같은 항공편이
+     * "10만원 편도"이자 "10만원 왕복"이 되어버린다. 실측에서 인천→도쿄 편도는
+     * 왕복의 3분의 1 수준이었으므로 어림잡아 60%로 낮춘다.
+     */
+    private fun PriceQuote.asOneWay(): PriceQuote =
+        copy(returnDate = null, price = Won(price.amount * ONE_WAY_RATIO_PERCENT / 100))
+```
+
+`respond` 아래 `companion object`에 상수를 추가한다.
+
+```kotlin
+        /** 편도는 왕복의 대략 60%. Fake가 편도와 왕복을 같은 값으로 말하지 않게 한다. */
+        const val ONE_WAY_RATIO_PERCENT = 60
+```
+
+`TripType`과 `Won` import를 추가한다.
+
+- [ ] **Step 6b: 편도 변환 테스트 작성**
+
+`data/src/test/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepositoryTest.kt`에 추가한다.
+이 `.map`이 이 태스크가 만드는 유일한 새 로직이므로 테스트로 고정한다.
+
+```kotlin
+    @Test
+    fun `편도를 요청하면 귀국일이 없다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val deals = (repo.cheapestDeals(Airport.INCHEON, 10, TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        assertTrue(deals.isNotEmpty())
+        assertTrue(deals.all { it.returnDate == null })
+    }
+
+    @Test
+    fun `왕복을 요청하면 귀국일이 있다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val deals = (repo.cheapestDeals(Airport.INCHEON, 10, TripType.ROUND_TRIP)
+            as AppResult.Success).data
+
+        assertTrue(deals.all { it.returnDate != null })
+    }
+
+    @Test
+    fun `편도가 왕복보다 싸다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val oneWay = (repo.cheapestDeals(Airport.INCHEON, 1, TripType.ONE_WAY)
+            as AppResult.Success).data.first()
+        val roundTrip = (repo.cheapestDeals(Airport.INCHEON, 1, TripType.ROUND_TRIP)
+            as AppResult.Success).data.first()
+
+        // 같은 값이면 토글을 눌러도 화면이 그대로라 사용자가 고장으로 오해한다.
+        assertTrue(oneWay.price < roundTrip.price)
     }
 ```
 
-`TripType` import를 추가한다.
+`com.sypark.flightdeal.domain.model.TripType` import를 추가한다.
 
 - [ ] **Step 7: ViewModel과 그 테스트 수정**
 
@@ -230,7 +288,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :domain:test :data:test :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 32(31+1), `:data` 20, `:presentation` 10. BUILD SUCCESSFUL.
+기대: `:domain` 32(31+1), `:data` 23(20+3), `:presentation` 10. BUILD SUCCESSFUL.
 
 - [ ] **Step 9: 커밋**
 
@@ -1608,7 +1666,7 @@ git commit -m "feat: 특가 피드에 왕복·편도 전환 추가"
 - [ ] 딥링크에 marker가 붙는다 (마커 미발급 상태에서도 링크는 열린다)
 - [ ] `:domain`에 Travelpayouts라는 단어가 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 32, `:data` 50, `:presentation` 13
+- [ ] 전체 테스트 통과. `:domain` 32, `:data` 53, `:presentation` 13
 
 ## 다음 계획서
 
