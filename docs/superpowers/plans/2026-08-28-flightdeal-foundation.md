@@ -1642,15 +1642,21 @@ class GetDealFeedUseCaseTest {
         deepLink = null,
     )
 
-    /** 테스트마다 응답을 지정할 수 있는 최소 스텁. */
+    /** 테스트마다 응답을 지정할 수 있는 최소 스텁. 분포 조회 횟수도 센다. */
     private class StubRepository(
         val deals: AppResult<List<PriceQuote>>,
         val stats: AppResult<PriceStats>,
     ) : FlightPriceRepository {
+        var priceStatsCalls = 0
+            private set
+
         override suspend fun cheapestDeals(origin: Airport, limit: Int) = deals
         override suspend fun calendarPrices(route: Route, month: YearMonth) =
             AppResult.Success(emptyList<PriceQuote>())
-        override suspend fun priceStats(route: Route, month: YearMonth) = stats
+        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> {
+            priceStatsCalls++
+            return stats
+        }
     }
 
     @Test
@@ -1701,6 +1707,45 @@ class GetDealFeedUseCaseTest {
 
         assertTrue(useCase(incheon) is AppResult.NetworkError)
     }
+
+    @Test
+    fun `알 수 없는 오류도 그대로 전달한다`() = runTest {
+        val repo = StubRepository(
+            deals = AppResult.Unknown(IllegalStateException("boom")),
+            stats = AppResult.Empty,
+        )
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        assertTrue(useCase(incheon) is AppResult.Unknown)
+    }
+
+    @Test
+    fun `딜이 여러 개면 각각에 할인율을 붙인다`() = runTest {
+        val repo = StubRepository(
+            deals = AppResult.Success(listOf(quote(189_000), quote(200_000), quote(210_000))),
+            stats = AppResult.Success(PriceStats(Won(305_000), Won(180_000), Won(400_000), 20)),
+        )
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        val result = useCase(incheon) as AppResult.Success
+
+        assertEquals(3, result.data.size)
+        assertTrue(result.data.all { it.discountPercent != null })
+    }
+
+    @Test
+    fun `같은 노선 같은 달은 분포를 한 번만 조회한다`() = runTest {
+        val repo = StubRepository(
+            deals = AppResult.Success(listOf(quote(189_000), quote(200_000), quote(210_000))),
+            stats = AppResult.Success(PriceStats(Won(305_000), Won(180_000), Won(400_000), 20)),
+        )
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        useCase(incheon)
+
+        // 세 딜이 모두 같은 노선·같은 달이다. 왕복을 세 번 할 이유가 없다.
+        assertEquals(1, repo.priceStatsCalls)
+    }
 }
 ```
 
@@ -1745,7 +1790,13 @@ package com.sypark.flightdeal.domain.usecase
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.DealItem
+import com.sypark.flightdeal.domain.model.PriceQuote
+import com.sypark.flightdeal.domain.model.PriceStats
+import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.time.YearMonth
 import javax.inject.Inject
 
@@ -1756,21 +1807,45 @@ class GetDealFeedUseCase @Inject constructor(
 
     suspend operator fun invoke(origin: Airport, limit: Int = DEFAULT_LIMIT): AppResult<List<DealItem>> {
         return when (val deals = repository.cheapestDeals(origin, limit)) {
-            is AppResult.Success -> AppResult.Success(deals.data.map { quote ->
-                // 분포 조회가 실패해도 딜 자체는 보여준다. 배지만 빠진다.
-                val stats = (repository.priceStats(quote.route, YearMonth.from(quote.departDate))
-                    as? AppResult.Success)?.data
-                val discount = stats?.let { calculateDiscount(quote.price, it) }
-
-                DealItem(
-                    quote = quote,
-                    discountPercent = discount,
-                    originalPrice = if (discount != null) stats.median else null,
-                )
-            })
+            is AppResult.Success -> AppResult.Success(attachDiscounts(deals.data))
             AppResult.Empty -> AppResult.Empty
             is AppResult.NetworkError -> deals
             is AppResult.Unknown -> deals
+        }
+    }
+
+    /**
+     * 딜마다 분포를 따로 조회하면 왕복이 딜 개수만큼 순차로 쌓인다. limit 기본값 20에
+     * 실제 네트워크 지연을 곱하면 첫 화면이 수 초씩 걸린다.
+     *
+     * 그래서 두 가지를 한다. 같은 (노선, 달)은 한 번만 조회하고, 그 조회들을 병렬로 돌린다.
+     */
+    private suspend fun attachDiscounts(quotes: List<PriceQuote>): List<DealItem> = coroutineScope {
+        val keys = quotes.map { it.route to YearMonth.from(it.departDate) }.distinct()
+
+        val statsByKey: Map<Pair<Route, YearMonth>, PriceStats> = keys
+            .map { key ->
+                async {
+                    // 분포 조회가 실패해도 딜 자체는 보여준다. 배지만 빠진다.
+                    key to (repository.priceStats(key.first, key.second) as? AppResult.Success)?.data
+                }
+            }
+            .awaitAll()
+            .mapNotNull { (key, stats) -> stats?.let { key to it } }
+            .toMap()
+
+        quotes.map { quote ->
+            val stats = statsByKey[quote.route to YearMonth.from(quote.departDate)]
+            // 배지와 취소선 기준가는 항상 함께 붙거나 함께 빠진다.
+            val badge = stats?.let { s ->
+                calculateDiscount(quote.price, s)?.let { percent -> percent to s.median }
+            }
+
+            DealItem(
+                quote = quote,
+                discountPercent = badge?.first,
+                originalPrice = badge?.second,
+            )
         }
     }
 
@@ -1786,7 +1861,7 @@ class GetDealFeedUseCase @Inject constructor(
 ./gradlew :domain:test
 ```
 
-기대: PASS (총 27건)
+기대: PASS (총 30건)
 
 - [ ] **Step 6: 커밋**
 
