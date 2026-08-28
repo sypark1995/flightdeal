@@ -2,16 +2,18 @@ package com.sypark.flightdeal.data.remote
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeepLinkBuilderTest {
 
     @Test
-    fun `상대 경로에 도메인과 마커를 붙인다`() {
-        val url = DeepLinkBuilder.build("/search/ICN0610TYO1?t=abc", marker = "123456")!!
-        assertTrue(url.startsWith("https://www.aviasales.com/search/ICN0610TYO1?t=abc"))
-        assertTrue(url.contains("marker=123456"))
+    fun `쿼리가 있는 경로에는 앰퍼샌드로 마커를 잇는다`() {
+        // startsWith + contains로 나눠 검사하면 물음표를 두 번 붙이는 구현도 통과한다.
+        // 전체 문자열을 그대로 비교한다.
+        assertEquals(
+            "https://www.aviasales.com/search/ICN0610TYO1?t=abc&marker=123456",
+            DeepLinkBuilder.build("/search/ICN0610TYO1?t=abc", marker = "123456"),
+        )
     }
 
     @Test

@@ -51,4 +51,12 @@ class GatePolicyTest {
     fun `빈 입력은 빈 출력이다`() {
         assertEquals(emptyList<Int>(), prioritize(emptyList(), minCount = 5))
     }
+
+    @Test
+    fun `minCount가 0이어도 비어 있지 않은 입력을 비우지 않는다`() {
+        val rows = listOf(Row("Aviakassa", 1), Row("Kupi.com", 2))
+        // 허용 예약처가 하나도 없는데 minCount가 0이면 "충분하다"가 참이 되어
+        // 빈 목록이 나가버린다. 화면을 비우지 않는 것이 이 함수의 목적이다.
+        assertEquals(listOf(1, 2), prioritize(rows, minCount = 0))
+    }
 }

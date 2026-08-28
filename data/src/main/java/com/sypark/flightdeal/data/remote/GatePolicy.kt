@@ -19,7 +19,10 @@ object GatePolicy {
      */
     fun <T> prioritize(items: List<T>, gateOf: (T) -> String?, minCount: Int): List<T> {
         val (preferred, rest) = items.partition { gateOf(it) in PREFERRED }
-        if (preferred.size >= minCount) return preferred
+
+        // minCount가 0 이하면 "충분하다"가 무조건 참이 되어, 허용 예약처가 하나도 없는
+        // 노선에서 빈 목록을 돌려준다. 이 함수의 존재 이유가 바로 그걸 막는 것이다.
+        if (preferred.isNotEmpty() && preferred.size >= minCount.coerceAtLeast(1)) return preferred
         return preferred + rest
     }
 }
