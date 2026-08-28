@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -27,7 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalContext
@@ -40,12 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sypark.flightdeal.booking.BookingLauncher
 import com.sypark.flightdeal.domain.model.TripType
-import com.sypark.flightdeal.ui.theme.Background
-import com.sypark.flightdeal.ui.theme.Indigo
-import com.sypark.flightdeal.ui.theme.Outline
-import com.sypark.flightdeal.ui.theme.Surface
-import com.sypark.flightdeal.ui.theme.TextPrimary
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 @Composable
 fun DealFeedScreen(
@@ -56,6 +51,9 @@ fun DealFeedScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
+    // onClick 람다는 클릭 시점에 실행되는 일반 람다라 그 안에서 Composable인
+    // FlightDealTheme.colors를 읽을 수 없다. 미리 변수로 꺼내둔다.
+    val indigo = FlightDealTheme.colors.indigo
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { /* 거절해도 추적 자체는 동작한다. 알림만 못 받는다. */ }
@@ -72,11 +70,11 @@ fun DealFeedScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Background),
+                .background(FlightDealTheme.colors.background),
         ) {
             Text(
                 text = "오늘의 특가",
-                color = TextPrimary,
+                color = FlightDealTheme.colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(16.dp),
@@ -88,22 +86,22 @@ fun DealFeedScreen(
             // 그리로 보낸다.
             Text(
                 text = "어디로 떠나세요?",
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 13.sp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .clickable(onClick = onSearch)
-                    .border(1.dp, Outline, RoundedCornerShape(16.dp))
-                    .background(Surface, RoundedCornerShape(16.dp))
+                    .border(1.dp, FlightDealTheme.colors.outline, RoundedCornerShape(16.dp))
+                    .background(FlightDealTheme.colors.surface, RoundedCornerShape(16.dp))
                     .heightIn(min = 48.dp)
                     .padding(horizontal = 14.dp, vertical = 15.dp),
             )
 
             Text(
                 text = "표시 가격은 참고가예요. 정확한 금액은 예약처에서 확인해주세요.",
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -146,7 +144,9 @@ fun DealFeedScreen(
                             // deepLink가 없는 견적도 있다. 그때는 DealCard가 자체적으로
                             // 클릭을 막고 "예약처 연결 없음"을 보여주므로 여기선 있는 경우만 연다.
                             onClick = {
-                                deal.quote.deepLink?.let { url -> BookingLauncher.open(context, url) }
+                                deal.quote.deepLink?.let { url ->
+                                    BookingLauncher.open(context, url, indigo)
+                                }
                             },
                             onTrack = {
                                 viewModel.track(deal)
@@ -192,12 +192,14 @@ fun DealFeedScreen(
 private fun TripTypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         text = label,
-        color = if (selected) Color.White else TextSecondary,
+        // 흰색을 고정하지 않는다 — 다크에서 indigo는 밝은 라벤더라 흰 글씨가
+        // 잘 안 읽힌다. onPrimary는 Theme.kt가 라이트/다크마다 대비를 맞춰 계산한다.
+        color = if (selected) MaterialTheme.colorScheme.onPrimary else FlightDealTheme.colors.textSecondary,
         fontSize = 12.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
         modifier = Modifier
             .background(
-                color = if (selected) Indigo else Surface,
+                color = if (selected) FlightDealTheme.colors.indigo else FlightDealTheme.colors.surface,
                 shape = RoundedCornerShape(20.dp),
             )
             .clickable(onClick = onClick)

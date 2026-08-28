@@ -21,9 +21,7 @@ import androidx.navigation.compose.rememberNavController
 import com.sypark.flightdeal.calendar.CalendarScreen
 import com.sypark.flightdeal.feed.DealFeedScreen
 import com.sypark.flightdeal.tracking.TrackingScreen
-import com.sypark.flightdeal.ui.theme.Background
-import com.sypark.flightdeal.ui.theme.Indigo
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 
 private enum class Tab(val route: String, val label: String) {
@@ -55,9 +53,9 @@ fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow
     }
 
     Scaffold(
-        containerColor = Background,
+        containerColor = FlightDealTheme.colors.background,
         bottomBar = {
-            NavigationBar(containerColor = Background) {
+            NavigationBar(containerColor = FlightDealTheme.colors.background) {
                 Tab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = currentRoute == tab.route,
@@ -73,8 +71,8 @@ fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow
                         icon = {},
                         label = { Text(text = tab.label, fontSize = 11.sp) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedTextColor = Indigo,
-                            unselectedTextColor = TextSecondary,
+                            selectedTextColor = FlightDealTheme.colors.indigo,
+                            unselectedTextColor = FlightDealTheme.colors.textSecondary,
                             indicatorColor = Color.Transparent,
                         ),
                     )

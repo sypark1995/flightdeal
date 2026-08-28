@@ -13,13 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,12 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sypark.flightdeal.booking.BookingLauncher
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.TripType
-import com.sypark.flightdeal.ui.theme.Background
-import com.sypark.flightdeal.ui.theme.Indigo
-import com.sypark.flightdeal.ui.theme.Outline
-import com.sypark.flightdeal.ui.theme.Surface
-import com.sypark.flightdeal.ui.theme.TextPrimary
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import java.time.LocalDate
 
 private val WEEKDAY_HEADERS = listOf("월", "화", "수", "목", "금", "토", "일")
@@ -52,15 +47,18 @@ fun CalendarScreen(
     val canGoBack by viewModel.canGoToPreviousMonth.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
+    // onClick 람다는 Composable 스코프가 아니라 클릭 시점에 실행된다 —
+    // 그 안에서 FlightDealTheme.colors를 직접 못 읽으므로 미리 변수로 꺼내둔다.
+    val indigo = FlightDealTheme.colors.indigo
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Background),
+            .background(FlightDealTheme.colors.background),
     ) {
         Text(
             text = "날짜별 최저가",
-            color = TextPrimary,
+            color = FlightDealTheme.colors.textPrimary,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(16.dp),
@@ -105,7 +103,7 @@ fun CalendarScreen(
         ) {
             Text(
                 text = "‹",
-                color = TextPrimary,
+                color = FlightDealTheme.colors.textPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
@@ -116,13 +114,13 @@ fun CalendarScreen(
             )
             Text(
                 text = "${month.year}년 ${month.monthValue}월",
-                color = TextPrimary,
+                color = FlightDealTheme.colors.textPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "›",
-                color = TextPrimary,
+                color = FlightDealTheme.colors.textPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
@@ -139,7 +137,7 @@ fun CalendarScreen(
             WEEKDAY_HEADERS.forEach { day ->
                 Text(
                     text = day,
-                    color = TextSecondary,
+                    color = FlightDealTheme.colors.textSecondary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
@@ -153,7 +151,7 @@ fun CalendarScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = "불러오는 중...", color = TextSecondary, fontSize = 13.sp)
+                Text(text = "불러오는 중...", color = FlightDealTheme.colors.textSecondary, fontSize = 13.sp)
             }
 
             is CalendarUiState.Success -> {
@@ -178,7 +176,9 @@ fun CalendarScreen(
                                         quote.price <= median,
                                     today = today,
                                     onClick = { picked ->
-                                        picked.deepLink?.let { url -> BookingLauncher.open(context, url) }
+                                        picked.deepLink?.let { url ->
+                                            BookingLauncher.open(context, url, indigo)
+                                        }
                                     },
                                     modifier = Modifier.weight(1f),
                                 )
@@ -208,12 +208,14 @@ fun CalendarScreen(
 private fun DestinationChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         text = label,
-        color = if (selected) Color.White else TextSecondary,
+        // 흰색을 고정하지 않는다 — 다크에서 indigo는 밝은 라벤더라 흰 글씨가
+        // 잘 안 읽힌다. onPrimary는 Theme.kt가 라이트/다크마다 대비를 맞춰 계산한다.
+        color = if (selected) MaterialTheme.colorScheme.onPrimary else FlightDealTheme.colors.textSecondary,
         fontSize = 13.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
         modifier = Modifier
             .background(
-                color = if (selected) Indigo else Surface,
+                color = if (selected) FlightDealTheme.colors.indigo else FlightDealTheme.colors.surface,
                 shape = RoundedCornerShape(20.dp),
             )
             .clickable(onClick = onClick)
@@ -225,12 +227,12 @@ private fun DestinationChip(label: String, selected: Boolean, onClick: () -> Uni
 private fun TripTypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         text = label,
-        color = if (selected) Color.White else TextSecondary,
+        color = if (selected) MaterialTheme.colorScheme.onPrimary else FlightDealTheme.colors.textSecondary,
         fontSize = 12.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
         modifier = Modifier
             .background(
-                color = if (selected) Indigo else Surface,
+                color = if (selected) FlightDealTheme.colors.indigo else FlightDealTheme.colors.surface,
                 shape = RoundedCornerShape(20.dp),
             )
             .clickable(onClick = onClick)
@@ -247,22 +249,22 @@ private fun CalendarMessage(title: String, body: String, onRetry: (() -> Unit)?)
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(text = title, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(text = title, color = FlightDealTheme.colors.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Text(
             text = body,
-            color = TextSecondary,
+            color = FlightDealTheme.colors.textSecondary,
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 6.dp),
         )
         onRetry?.let { retry ->
             Text(
                 text = "다시 시도",
-                color = Indigo,
+                color = FlightDealTheme.colors.indigo,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .padding(top = 14.dp)
-                    .background(Surface, RoundedCornerShape(20.dp))
+                    .background(FlightDealTheme.colors.surface, RoundedCornerShape(20.dp))
                     .clickable(onClick = retry)
                     .padding(horizontal = 16.dp, vertical = 9.dp),
             )
