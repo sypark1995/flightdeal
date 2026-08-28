@@ -26,6 +26,9 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
         )
         openTracking.value = intent?.getBooleanExtra(EXTRA_OPEN_TRACKING, false) == true
+        // 인텐트가 그대로 남아 있으면 회전할 때마다 다시 읽힌다 — 특가로 옮겨간 뒤
+        // 회전만 해도 추적 탭으로 되돌아가 버린다.
+        intent?.removeExtra(EXTRA_OPEN_TRACKING)
         setContent {
             FlightDealTheme {
                 FlightDealNavHost(openTracking = openTracking)
@@ -37,6 +40,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_OPEN_TRACKING, false)) openTracking.value = true
+        // 인텐트가 그대로 남아 있으면 회전할 때마다 다시 읽힌다 — 특가로 옮겨간 뒤
+        // 회전만 해도 추적 탭으로 되돌아가 버린다.
+        intent.removeExtra(EXTRA_OPEN_TRACKING)
     }
 
     companion object {
