@@ -1701,6 +1701,189 @@ git commit -m "feat: 특가 피드에 왕복·편도 전환 추가"
 
 ---
 
+## Task 5b: 분포를 딜과 같은 여정 종류로 계산 (Task 5 리뷰에서 발견)
+
+**Files:**
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/FlightPriceRepository.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/GetDealFeedUseCase.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepository.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: 위 인터페이스를 구현하는 모든 테스트 더블
+
+### 무엇이 잘못됐나
+
+`calendarPrices`가 `TripType.ONE_WAY`를 하드코딩하고 `priceStats`가 거기 위임한다.
+그런데 피드의 기본값은 왕복이다. 그래서 왕복 딜 가격을 편도 분포와 비교하게 된다.
+
+실측값으로 확인했다. 인천→도쿄 왕복 최저가는 301,430원, 편도 중앙값은 145,657원이다.
+`CalculateDiscountUseCase`는 `price >= stats.median`이면 null을 돌려주므로, 왕복 모드에서는
+**할인 배지가 단 하나도 뜨지 않는다.** 크래시도 오류도 없이 배지만 사라진다.
+
+이 앱의 핵심 가치가 "평균가 대비 −N%"이므로 조용히 그것만 죽는 셈이다.
+
+### 고침
+
+분포는 딜과 같은 종류의 운임으로 계산해야 한다. 여정 종류를 인터페이스로 끌어올린다.
+
+```kotlin
+interface FlightPriceRepository {
+
+    suspend fun cheapestDeals(
+        origin: Airport,
+        limit: Int,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
+
+    /**
+     * 한 노선·한 달의 날짜별 가격.
+     *
+     * @param tripType 왕복 가격을 편도 분포와 비교하면 할인율이 성립하지 않는다.
+     *   비교 대상은 같은 종류의 운임이어야 한다.
+     */
+    suspend fun calendarPrices(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
+
+    /** 한 노선·한 달의 가격 분포. 할인율 배지의 기준. */
+    suspend fun priceStats(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<PriceStats>
+}
+```
+
+`GetDealFeedUseCase.attachDiscounts`는 `invoke`가 받은 `tripType`을 그대로 넘긴다.
+중복 제거 키는 `(route, month)` 그대로 둔다 — 한 번의 `invoke` 안에서 `tripType`은 상수다.
+
+### 회귀 테스트
+
+`GetDealFeedUseCaseTest`에 추가한다. 이 버그가 되살아나면 바로 잡힌다.
+
+```kotlin
+    @Test
+    fun `분포도 딜과 같은 여정 종류로 조회한다`() = runTest {
+        var statsTripType: TripType? = null
+        val repo = object : FlightPriceRepository {
+            override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) =
+                AppResult.Success(listOf(quote(189_000)))
+            override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<List<PriceQuote>> = AppResult.Empty
+            override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<PriceStats> {
+                statsTripType = tripType
+                return AppResult.Empty
+            }
+        }
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        useCase(incheon, TripType.ROUND_TRIP)
+
+        // 왕복 딜을 편도 분포와 비교하면 배지가 영영 안 뜬다.
+        assertEquals(TripType.ROUND_TRIP, statsTripType)
+    }
+```
+
+---
+
+## Task 5c: 목적지 조회 병렬화와 예약처 정책 실제 적용
+
+**Files:**
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepositoryTest.kt`
+
+### 무엇이 잘못됐나
+
+**하나.** `cheapestDeals`가 목적지를 순차로 돈다. 실제 네트워크에서 왕복 300~800ms이므로
+기본 6개면 첫 화면에 1.8~4.8초가 그냥 쌓인다. 같은 문제를 `GetDealFeedUseCase.attachDiscounts`가
+이미 `coroutineScope`/`async`/`awaitAll`로 풀어놨는데 여기서 다시 순차로 돌았다.
+
+**둘.** `GatePolicy`가 여기서 아무 일도 안 한다. 목적지마다 후보를 하나만 뽑는데
+`minCount = limit`(기본 20)로 부르므로 배제 분기가 절대 성립하지 않는다. 정렬만 하고
+필터링은 영영 안 된다. 한국에서 예약 못 하는 예약처의 항공권이 그대로 카드에 오른다.
+
+### 고침
+
+목적지마다 **그 노선 안에서** 예약처 우선순위를 적용해 한 건을 고른다. 그러면 정책이
+실제로 선택을 한다 — 한국에서 예약 가능한 최저가가 있으면 그것을, 없으면 그 노선의
+최저가라도 보여준다.
+
+```kotlin
+    override suspend fun cheapestDeals(
+        origin: Airport,
+        limit: Int,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>> = call {
+        val month = YearMonth.now(clock).plusMonths(LEAD_MONTHS)
+
+        coroutineScope {
+            destinations
+                .map { destination -> async { fetch(origin.iata, destination, month, tripType) } }
+                .awaitAll()
+                .mapNotNull { quotes ->
+                    // 목적지마다 한 건만 고른다. 한국에서 예약 가능한 예약처를 우선하되,
+                    // 그런 곳이 없으면 그 노선의 최저가라도 보여준다.
+                    // minCount=1이어야 정책이 실제로 고르는 일을 한다.
+                    GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()
+                }
+                .take(limit)
+                .map { it.quote }
+        }
+    }
+```
+
+`kotlinx.coroutines.async`, `awaitAll`, `coroutineScope` import를 추가한다.
+
+### 테스트 고침
+
+`success가 false면 Unknown이다` 테스트가 HTTP 400을 큐에 넣는다. 그러면 상태 코드만으로
+`HttpException`이 먼저 나서, 검사하려던 `if (!response.success)` 줄에 닿지도 않는다.
+그 줄을 지워도 테스트가 통과한다. 200에 `success:false`를 실어 진짜로 그 경로를 밟게 한다.
+
+```kotlin
+    @Test
+    fun `200이어도 success가 false면 Unknown이다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"error":"something","data":null,"success":false}""")
+        )
+
+        val result = repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+
+        assertTrue(result is AppResult.Unknown)
+    }
+```
+
+예약처 정책이 실제로 고르는지도 확인한다.
+
+```kotlin
+    @Test
+    fun `한국에서 예약 가능한 예약처를 우선해 고른다`() = runTest {
+        // 첫 항목이 더 싸지만 CIS 예약처다. 두 번째가 Trip.com이다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-07T15:15:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val deals = (repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        // 더 싸더라도 한국에서 결제가 안 되는 곳이면 소용없다.
+        assertEquals(1, deals.size)
+        assertEquals(120_000, deals.first().price.amount)
+    }
+```
+
+---
+
 ## 완료 기준
 
 - [ ] `RepositoryModule` 한 파일만 바꿔서 Fake ↔ 실데이터가 전환된다
