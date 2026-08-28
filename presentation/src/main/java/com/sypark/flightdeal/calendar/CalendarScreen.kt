@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,7 +56,11 @@ fun CalendarScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(FlightDealTheme.colors.background),
+            .background(FlightDealTheme.colors.background)
+            // 6주짜리 달은 그리드 6행 아래에 캡션 두 줄을 더할 자리가 늘 남지는 않는다.
+            // 스크롤이 없으면 그 경우 화면 아래로 넘친 부분이 소리 없이 잘려 안 보인다 —
+            // 캡션을 그리드 아래 붙이면서 실제로 그 잘림이 나타났다.
+            .verticalScroll(rememberScrollState()),
     ) {
         Text(
             text = "날짜별 최저가",
@@ -148,7 +154,9 @@ fun CalendarScreen(
 
         when (val current = state) {
             CalendarUiState.Loading -> Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(text = "불러오는 중...", color = FlightDealTheme.colors.textSecondary, fontSize = 13.sp)
@@ -186,6 +194,8 @@ fun CalendarScreen(
                         }
                     }
                 }
+
+                CalendarCaption(tripType = tripType)
             }
 
             CalendarUiState.Empty -> CalendarMessage(
@@ -201,6 +211,39 @@ fun CalendarScreen(
                 onRetry = if (current.retryable) viewModel::refresh else null,
             )
         }
+    }
+}
+
+/**
+ * 그리드 아래에 두는 안내 두 줄.
+ *
+ * 이 화면 제목은 "날짜별 최저가"라 날짜끼리 값을 직접 비교하는 그리드처럼 읽힌다.
+ * 하지만 왕복은 API가 여정 길이를 고정해주지 않아 날짜마다 귀국일이 다르고,
+ * 예약처 규칙 때문에 어떤 날은 셀이 비어 있다. 둘 다 쿼리를 바꿔서 없앨 수 없는
+ * 차이라, 화면이 최소한 그 사실을 말해줘야 사용자가 그리드를 잘못 읽지 않는다.
+ */
+@Composable
+private fun CalendarCaption(tripType: TripType) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        // 두 줄이 딱 붙으면 좁은 화면에서 서로 눌린 것처럼 읽힌다. 최소한의 숨 쉴
+        // 틈을 둔다.
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (tripType == TripType.ROUND_TRIP) {
+            Text(
+                text = "왕복은 날짜마다 귀국일이 달라요. 눌러서 확인하세요.",
+                color = FlightDealTheme.colors.textSecondary,
+                fontSize = 11.sp,
+            )
+        }
+        Text(
+            text = "한국에서 예약할 수 없는 예약처만 있는 날은 비워둬요.",
+            color = FlightDealTheme.colors.textSecondary,
+            fontSize = 11.sp,
+        )
     }
 }
 
@@ -242,12 +285,14 @@ private fun TripTypeChip(label: String, selected: Boolean, onClick: () -> Unit) 
 
 @Composable
 private fun CalendarMessage(title: String, body: String, onRetry: (() -> Unit)?) {
+    // fillMaxSize가 아니라 fillMaxWidth다. 화면 전체(그리드+캡션 포함)가 스크롤
+    // 가능한 Column 안에 있어, 여기서 fillMaxSize를 쓰면 세로로 무한한 높이
+    // 제약에서 "화면 전체를 채워라"를 시도하다 크래시한다.
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Text(text = title, color = FlightDealTheme.colors.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Text(
