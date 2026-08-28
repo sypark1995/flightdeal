@@ -815,7 +815,7 @@ object DeepLinkBuilder {
 ./gradlew :data:test
 ```
 
-기대: PASS (기존 13 + GatePolicy 6 + DeepLink 5 = 24건)
+기대: PASS (기존 13 + GatePolicy 7 + DeepLink 5 = 25건)
 
 - [ ] **Step 10: 커밋**
 
@@ -1080,7 +1080,7 @@ object AirportNames {
 ./gradlew :data:test
 ```
 
-기대: PASS (24 + 매퍼 10 = 34건)
+기대: PASS (25 + 매퍼 10 = 35건)
 
 - [ ] **Step 7: 커밋**
 
@@ -1408,7 +1408,7 @@ class TravelpayoutsFlightPriceRepository(
 ./gradlew :data:test
 ```
 
-기대: PASS (34 + Repository 9 = 43건)
+기대: PASS (35 + Repository 9 = 44건)
 
 - [ ] **Step 5: 커밋**
 
@@ -1711,7 +1711,7 @@ git commit -m "feat: 특가 피드에 왕복·편도 전환 추가"
 - [ ] 딥링크에 marker가 붙는다 (마커 미발급 상태에서도 링크는 열린다)
 - [ ] `:domain`에 Travelpayouts라는 단어가 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 32, `:data` 43, `:presentation` 13
+- [ ] 전체 테스트 통과. `:domain` 32, `:data` 44, `:presentation` 13
 
 ## 다음 계획서
 
