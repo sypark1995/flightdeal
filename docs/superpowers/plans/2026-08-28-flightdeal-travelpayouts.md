@@ -574,17 +574,24 @@ package com.sypark.flightdeal.data.remote
  */
 object AirlineNames {
 
+    // 코드는 실제 응답 픽스처에 나타난 것과 IATA 공식 코드로 확인했다.
+    // 에어프레미아는 YP다. RF는 청주 기반의 다른 항공사인 에어로케이이므로
+    // 둘을 헷갈리면 사용자에게 엉뚱한 항공사 이름이 뜬다 —
+    // 코드가 그대로 보이는 것보다 나쁘다.
     private val NAMES = mapOf(
         // 국적사
         "KE" to "대한항공", "OZ" to "아시아나항공", "TW" to "티웨이항공",
         "LJ" to "진에어", "7C" to "제주항공", "ZE" to "이스타항공",
-        "BX" to "에어부산", "RS" to "에어서울", "RF" to "에어프레미아",
+        "BX" to "에어부산", "RS" to "에어서울", "YP" to "에어프레미아",
+        "RF" to "에어로케이",
         // 일본
         "JL" to "일본항공", "NH" to "전일본공수", "MM" to "피치항공",
+        "ZG" to "집에어",
         // 동남아
-        "TG" to "타이항공", "VJ" to "비엣젯항공", "VN" to "베트남항공",
-        "SQ" to "싱가포르항공", "PR" to "필리핀항공", "MH" to "말레이시아항공",
-        "GA" to "가루다인도네시아", "AK" to "에어아시아",
+        "TG" to "타이항공", "VJ" to "비엣젯항공", "VZ" to "타이비엣젯항공",
+        "VN" to "베트남항공", "FD" to "타이에어아시아",
+        "SQ" to "싱가포르항공", "TR" to "스쿠트", "PR" to "필리핀항공",
+        "MH" to "말레이시아항공", "GA" to "가루다인도네시아", "AK" to "에어아시아",
         // 중화권
         "CI" to "중화항공", "BR" to "에바항공", "CX" to "캐세이퍼시픽",
         "HX" to "홍콩항공", "UO" to "홍콩익스프레스",
@@ -653,6 +660,14 @@ class GatePolicyTest {
     fun `빈 입력은 빈 출력이다`() {
         assertEquals(emptyList<Int>(), prioritize(emptyList(), minCount = 5))
     }
+
+    @Test
+    fun `minCount가 0이어도 비어 있지 않은 입력을 비우지 않는다`() {
+        val rows = listOf(Row("Aviakassa", 1), Row("Kupi.com", 2))
+        // 허용 예약처가 하나도 없는데 minCount가 0이면 "충분하다"가 참이 되어
+        // 빈 목록이 나가버린다. 화면을 비우지 않는 것이 이 함수의 목적이다.
+        assertEquals(listOf(1, 2), prioritize(rows, minCount = 0))
+    }
 }
 ```
 
@@ -693,7 +708,10 @@ object GatePolicy {
      */
     fun <T> prioritize(items: List<T>, gateOf: (T) -> String?, minCount: Int): List<T> {
         val (preferred, rest) = items.partition { gateOf(it) in PREFERRED }
-        if (preferred.size >= minCount) return preferred
+
+        // minCount가 0 이하면 "충분하다"가 무조건 참이 되어, 허용 예약처가 하나도 없는
+        // 노선에서 빈 목록을 돌려준다. 이 함수의 존재 이유가 바로 그걸 막는 것이다.
+        if (preferred.isNotEmpty() && preferred.size >= minCount.coerceAtLeast(1)) return preferred
         return preferred + rest
     }
 }
@@ -716,16 +734,18 @@ package com.sypark.flightdeal.data.remote
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeepLinkBuilderTest {
 
     @Test
-    fun `상대 경로에 도메인과 마커를 붙인다`() {
-        val url = DeepLinkBuilder.build("/search/ICN0610TYO1?t=abc", marker = "123456")!!
-        assertTrue(url.startsWith("https://www.aviasales.com/search/ICN0610TYO1?t=abc"))
-        assertTrue(url.contains("marker=123456"))
+    fun `쿼리가 있는 경로에는 앰퍼샌드로 마커를 잇는다`() {
+        // startsWith + contains로 나눠 검사하면 물음표를 두 번 붙이는 구현도 통과한다.
+        // 전체 문자열을 그대로 비교한다.
+        assertEquals(
+            "https://www.aviasales.com/search/ICN0610TYO1?t=abc&marker=123456",
+            DeepLinkBuilder.build("/search/ICN0610TYO1?t=abc", marker = "123456"),
+        )
     }
 
     @Test
