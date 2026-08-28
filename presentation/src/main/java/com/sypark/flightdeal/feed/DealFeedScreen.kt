@@ -2,6 +2,7 @@ package com.sypark.flightdeal.feed
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -119,7 +120,10 @@ fun DealFeedScreen(
                         onClick = { /* 딥링크는 이후 계획서에서 */ },
                         onTrack = {
                             viewModel.track(deal)
-                            if (ContextCompat.checkSelfPermission(
+                            // 런타임 알림 권한은 API 33부터다. 그 아래에서 요청하면
+                            // 시스템이 모르는 권한이라 다이얼로그 없이 거부로 돌아온다.
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
                                     context, Manifest.permission.POST_NOTIFICATIONS
                                 ) != PackageManager.PERMISSION_GRANTED
                             ) {

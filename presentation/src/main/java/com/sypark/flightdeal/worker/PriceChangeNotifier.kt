@@ -1,13 +1,10 @@
 package com.sypark.flightdeal.worker
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.sypark.flightdeal.domain.model.Direction
 import com.sypark.flightdeal.domain.model.PriceChange
 import com.sypark.flightdeal.domain.model.TrackedRoute
@@ -25,9 +22,9 @@ class PriceChangeNotifier @Inject constructor(
      */
     fun notify(changes: List<PriceChange>, routes: List<TrackedRoute>) {
         if (changes.isEmpty()) return
-        if (!hasPermission()) return
 
         ensureChannel()
+        if (!notificationsAllowed()) return
 
         val byId = routes.associateBy { it.id }
         val lines = changes.mapNotNull { change ->
@@ -51,10 +48,15 @@ class PriceChangeNotifier @Inject constructor(
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
     }
 
-    /** 권한이 없으면 조용히 넘어간다. 알림을 못 받을 뿐 앱의 나머지는 정상 동작해야 한다. */
-    private fun hasPermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+    /**
+     * 권한이 없으면 조용히 넘어간다. 알림을 못 받을 뿐 앱의 나머지는 정상 동작해야 한다.
+     *
+     * `POST_NOTIFICATIONS`를 직접 확인하면 안 된다. 그 권한은 API 33부터 존재하고,
+     * minSdk 26~32에서는 시스템이 모르는 권한이라 항상 거부로 나온다.
+     * 정작 그 버전들은 런타임 권한 자체가 필요 없는데도 알림이 전부 버려진다.
+     */
+    private fun notificationsAllowed(): Boolean =
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
