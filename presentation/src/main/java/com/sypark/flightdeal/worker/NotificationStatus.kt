@@ -1,5 +1,6 @@
 package com.sypark.flightdeal.worker
 
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
@@ -15,6 +16,24 @@ object NotificationStatus {
 
     /** [PriceChangeNotifier]가 알림을 만들 때 쓰는 채널. 화면이 시스템 설정을 열 때도 같은 값이 필요하다. */
     const val CHANNEL_ID = "price_change"
+
+    /**
+     * 채널이 아직 없으면 만든다. [PriceChangeNotifier]가 알림을 보내기 전에,
+     * 그리고 내정보 화면이 채널 설정 화면을 열기 전에 똑같이 부른다.
+     *
+     * 채널 생성 책임을 여기 하나로 모은 이유: 채널은 새 설치에서는 알림을 한 번도
+     * 보내기 전까지 존재하지 않는다. 화면이 `ACTION_CHANNEL_NOTIFICATION_SETTINGS`로
+     * 그 채널의 설정 화면을 열려고 하면, 채널이 없어도 예외는 나지 않는다 — 시스템
+     * Settings 액티비티 자체는 항상 있으니 그냥 열렸다가 빈 화면인 채로 바로 끝난다.
+     * 그래서 "설정 화면이 안 열리는 경우"를 잡으려면 예외를 기다릴 게 아니라, 열기
+     * 전에 채널이 있는지부터 이 함수로 보장해야 한다.
+     */
+    fun ensureChannel(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "가격 변동", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+    }
 
     /**
      * 앱 전체 스위치와 채널 importance를 모두 본다. 기기에서 음소거/해제 대조로
