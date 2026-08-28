@@ -19,6 +19,22 @@ class Airport(
     companion object {
         /** 기본 출발지. 설정 화면이 생기면 DataStore에서 읽어온다. */
         val INCHEON = Airport("ICN", "서울", "대한민국")
+
+        /**
+         * 이 앱이 다루는 인천 출발 목적지.
+         *
+         * 데이터 소스가 아니라 제품이 정하는 목록이라 도메인에 둔다.
+         * `:data`의 조회도, 캘린더 화면의 선택지도 여기 하나를 본다 —
+         * 두 군데에 두면 화면에는 있는데 조회는 안 되는 목적지가 생긴다.
+         */
+        val DESTINATIONS = listOf(
+            Airport("TYO", "도쿄", "일본"),
+            Airport("BKK", "방콕", "태국"),
+            Airport("DAD", "다낭", "베트남"),
+            Airport("TPE", "타이베이", "대만"),
+            Airport("HKG", "홍콩", "홍콩"),
+            Airport("SIN", "싱가포르", "싱가포르"),
+        )
     }
 }
 

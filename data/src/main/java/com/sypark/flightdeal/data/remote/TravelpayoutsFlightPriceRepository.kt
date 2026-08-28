@@ -28,7 +28,7 @@ class TravelpayoutsFlightPriceRepository(
     private val api: TravelpayoutsApi,
     private val marker: String,
     private val clock: Clock,
-    private val destinations: List<String> = DEFAULT_DESTINATIONS,
+    private val destinations: List<String> = Airport.DESTINATIONS.map { it.iata },
 ) : FlightPriceRepository {
 
     /** 예약처는 특가 목록을 고를 때만 쓴다. 도메인 밖으로 새 나가지 않는다. */
@@ -94,6 +94,20 @@ class TravelpayoutsFlightPriceRepository(
         // 캘린더는 그날의 최저가를 보여주는 화면이다. 예약처로 거르지 않는다.
         fetch(route.origin.iata, route.destination.iata, month, tripType)
             .map { it.quote }
+    }
+
+    override suspend fun calendarDeals(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>> = call {
+        fetch(route.origin.iata, route.destination.iata, month, tripType)
+            .groupBy { it.quote.departDate }
+            .mapNotNull { (_, quotes) ->
+                // 딜 피드·추적과 같은 규칙이다. 여기서 갈리면 화면마다 값이 달라진다.
+                GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()?.quote
+            }
+            .sortedBy { it.departDate }
     }
 
     override suspend fun priceStats(
@@ -208,9 +222,6 @@ class TravelpayoutsFlightPriceRepository(
 
         /** 지금 사면 비싸다. 두 달 뒤가 특가가 나오는 구간이다. */
         private const val LEAD_MONTHS = 2L
-
-        /** 피드에 띄울 인기 목적지. 설정 화면이 생기면 사용자가 고르게 한다. */
-        val DEFAULT_DESTINATIONS = listOf("TYO", "BKK", "DAD", "TPE", "HKG", "SIN")
 
         /**
          * 피드 한 번에 cheapestDeals와 priceStats가 같은 요청을 연달아 보낸다.

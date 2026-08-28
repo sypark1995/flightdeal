@@ -18,6 +18,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.sypark.flightdeal.calendar.CalendarScreen
 import com.sypark.flightdeal.feed.DealFeedScreen
 import com.sypark.flightdeal.tracking.TrackingScreen
 import com.sypark.flightdeal.ui.theme.Background
@@ -28,7 +29,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 private enum class Tab(val route: String, val label: String) {
     Deals("deals", "특가"),
     Tracking("tracking", "추적"),
-    Search("search", "검색"),
+    // "검색"이던 라벨을 "달력"으로 바꾼다. 이 화면은 자유 검색이 아니라 날짜별
+    // 최저가를 격자로 보여주는 캘린더다 — 이름이 하는 일과 맞아야 한다.
+    Search("search", "달력"),
     Profile("profile", "내정보"),
 }
 
@@ -86,7 +89,7 @@ fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow
         ) {
             composable(Tab.Deals.route) { DealFeedScreen() }
             composable(Tab.Tracking.route) { TrackingScreen() }
-            composable(Tab.Search.route) { PlaceholderScreen() }
+            composable(Tab.Search.route) { CalendarScreen() }
             composable(Tab.Profile.route) { PlaceholderScreen() }
         }
     }

@@ -193,6 +193,40 @@ class TravelpayoutsFlightPriceRepositoryTest {
     }
 
     @Test
+    fun `캘린더 딜은 예약처로 거르지 않은 calendarPrices보다 항목이 적을 수 있다`() = runTest {
+        // 같은 날짜에 CIS 전용 예약처 항목이 하나 더 있다. calendarPrices는 그대로 두 건을
+        // 다 주지만, calendarDeals는 딜 피드·추적과 같은 규칙으로 하루에 한 건만 남겨야 한다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T09:20:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val deals = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        // 더 싸더라도 한국에서 결제가 안 되는 곳이면 소용없다. 딜 피드가 고른 것과 같아야
+        // 캘린더를 누르고 들어갔을 때 값이 갈리지 않는다.
+        assertEquals(1, deals.size)
+        assertEquals(120_000, deals.first().price.amount)
+    }
+
+    @Test
+    fun `캘린더 딜은 날짜당 한 건만 남긴다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+
+        val deals = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        assertEquals(deals.size, deals.map { it.departDate }.distinct().size)
+    }
+
+    @Test
     fun `같은 요청을 연달아 보내면 한 번만 조회한다`() = runTest {
         enqueueFixture("v3-ICN-TYO.json")
 

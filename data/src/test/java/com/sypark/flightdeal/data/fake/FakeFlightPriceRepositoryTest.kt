@@ -86,6 +86,19 @@ class FakeFlightPriceRepositoryTest {
     }
 
     @Test
+    fun `calendarDeals는 calendarPrices와 같은 값을 돌려준다`() = runTest {
+        // FakeDealFixtures에는 예약처 개념이 없다. 실데이터처럼 걸러낼 게 없으니
+        // 둘이 갈라질 이유가 없다 — 갈리면 딜 피드와 캘린더 화면의 개발용 데이터가 달라진다.
+        val repo = FakeFlightPriceRepository()
+        val month = YearMonth.of(2026, 10)
+
+        val prices = (repo.calendarPrices(tokyoRoute, month, TripType.ROUND_TRIP) as AppResult.Success).data
+        val deals = (repo.calendarDeals(tokyoRoute, month, TripType.ROUND_TRIP) as AppResult.Success).data
+
+        assertEquals(prices, deals)
+    }
+
+    @Test
     fun `priceStats는 Normal 모드에서 Success를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
