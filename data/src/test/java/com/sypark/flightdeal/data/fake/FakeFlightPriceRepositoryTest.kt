@@ -4,6 +4,7 @@ import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
+import java.time.LocalDate
 import java.time.YearMonth
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -130,6 +131,54 @@ class FakeFlightPriceRepositoryTest {
             as AppResult.Success).data
 
         assertTrue(deals.all { it.returnDate != null })
+    }
+
+    @Test
+    fun `trackedPrice는 귀국일이 다르면 값이 없다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+        val departDate = LocalDate.of(2026, 10, 12)
+
+        // 픽스처의 실제 귀국일은 출발일+4일이다. 다른 날을 요구하면 같은 여정이 아니다.
+        val mismatched = repo.trackedPrice(
+            route = tokyoRoute,
+            departDate = departDate,
+            returnDate = departDate.plusDays(10),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 출발일만 보고 맞다고 하면, 실제 구현에서 고쳐진 "귀국일 다른 여정을 같은 걸로
+        // 치는" 버그를 이 fake가 다시 감추게 된다.
+        assertEquals(AppResult.Empty, mismatched)
+    }
+
+    @Test
+    fun `trackedPrice는 귀국일이 맞으면 값을 돌려준다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+        val departDate = LocalDate.of(2026, 10, 12)
+
+        val matched = repo.trackedPrice(
+            route = tokyoRoute,
+            departDate = departDate,
+            returnDate = departDate.plusDays(4),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        assertTrue(matched is AppResult.Success)
+    }
+
+    @Test
+    fun `trackedPrice는 편도 조회에서 귀국일을 null로 요구한다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+        val departDate = LocalDate.of(2026, 10, 12)
+
+        val oneWay = repo.trackedPrice(
+            route = tokyoRoute,
+            departDate = departDate,
+            returnDate = null,
+            tripType = TripType.ONE_WAY,
+        )
+
+        assertTrue(oneWay is AppResult.Success)
     }
 
     @Test

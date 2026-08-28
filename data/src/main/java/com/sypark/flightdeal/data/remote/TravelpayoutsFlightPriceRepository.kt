@@ -6,6 +6,7 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import java.io.IOException
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
@@ -110,6 +112,23 @@ class TravelpayoutsFlightPriceRepository(
         }
     }
 
+    override suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won> = callSingle {
+        val quotes = fetch(
+            originIata = route.origin.iata,
+            destinationIata = route.destination.iata,
+            month = YearMonth.from(departDate),
+            tripType = tripType,
+        ).filter { it.quote.departDate == departDate && it.quote.returnDate == returnDate }
+
+        // 딜 피드가 고른 것과 같은 규칙이다. 여기서 규칙이 갈리면 가짜 변동이 생긴다.
+        GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()?.quote?.price
+    }
+
     /**
      * 예약처를 quote에 붙여서 돌려준다. DTO와 도메인 객체를 따로 들고 다니다
      * 인덱스로 짝지으면, 변환에 실패한 항목이 하나만 있어도 전부 어긋난다.
@@ -174,6 +193,14 @@ class TravelpayoutsFlightPriceRepository(
             } catch (e: Exception) {
                 AppResult.Unknown(e)
             }
+        }
+
+    private suspend fun <T : Any> callSingle(block: suspend () -> T?): AppResult<T> =
+        when (val result = call { listOfNotNull(block()) }) {
+            is AppResult.Success -> AppResult.Success(result.data.first())
+            AppResult.Empty -> AppResult.Empty
+            is AppResult.NetworkError -> result
+            is AppResult.Unknown -> result
         }
 
     companion object {

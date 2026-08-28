@@ -136,8 +136,8 @@ class AirportTest {
 
     @Test
     fun `IATA가 같으면 표시 이름이 달라도 같은 공항이다`() {
-        // 매퍼는 국가명을 채우지 않고, 상수는 채운다. 그래도 같은 인천이다.
-        assertEquals(Airport("ICN", "서울", ""), Airport("ICN", "서울", "대한민국"))
+        // 도시명까지 다르게 둔다. cityKo를 고정하면 cityKo를 비교하는 잘못된 구현도 통과한다.
+        assertEquals(Airport("ICN", "서울", ""), Airport("ICN", "인천", "대한민국"))
     }
 
     @Test
@@ -338,6 +338,8 @@ room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.14.1" }
+# ApplicationProvider는 room-testing에도 robolectric에도 전이로 딸려오지 않는다.
+androidx-test-core = { module = "androidx.test:core", version = "1.7.0" }
 ```
 
 `data/build.gradle.kts`의 `dependencies`:
@@ -349,6 +351,7 @@ robolectric = { module = "org.robolectric:robolectric", version = "4.14.1" }
 
     testImplementation(libs.room.testing)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 ```
 
 `android { }` 블록에 추가한다. Robolectric이 없으면 Room DAO를 JVM 테스트로 돌릴 수 없다.
@@ -357,6 +360,16 @@ robolectric = { module = "org.robolectric:robolectric", version = "4.14.1" }
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+```
+
+`android { }` 바깥, 모듈 최상위에 스키마 출력 위치를 지정한다.
+
+```kotlin
+ksp {
+    // 스키마 JSON을 남겨야 나중에 마이그레이션 테스트가 기준선을 갖는다.
+    // 이걸 안 남기면 컬럼을 바꿀 때 "무엇에서 무엇으로"를 검증할 방법이 없다.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
 ```
 
 - [ ] **Step 2: 엔티티 작성**
@@ -383,7 +396,8 @@ data class TrackedRouteEntity(
     val originIata: String,
     val destinationIata: String,
     val departDate: String,
-    val returnDate: String?,
+    /** 편도는 빈 문자열. NULL로 두면 유니크 인덱스가 편도 중복을 못 잡는다. */
+    val returnDate: String,
     val tripType: String,
     val targetPrice: Int?,
     val createdAt: Long,
@@ -478,14 +492,18 @@ interface PriceSnapshotDao {
     suspend fun insert(entity: PriceSnapshotEntity)
 
     @Query(
+        // latestFor와 같은 이유로 id 타이브레이크를 둔다. 같은 초에 들어간 두 행의
+        // 순서가 뒤집히면 어느 쪽이 최신인지가 바뀌어 화살표와 색이 반대로 뜬다.
         "SELECT * FROM price_snapshot WHERE trackedRouteId = :trackedRouteId " +
-            "AND capturedAt >= :sinceEpochSecond ORDER BY capturedAt ASC"
+            "AND capturedAt >= :sinceEpochSecond ORDER BY capturedAt ASC, id ASC"
     )
     fun observeFor(trackedRouteId: Long, sinceEpochSecond: Long): Flow<List<PriceSnapshotEntity>>
 
     @Query(
+        // capturedAt은 초 단위라 같은 초에 들어간 두 행의 순서가 정해지지 않는다.
+        // id로 타이브레이크해서 항상 나중에 넣은 것이 최근이 되게 한다.
         "SELECT * FROM price_snapshot WHERE trackedRouteId = :trackedRouteId " +
-            "ORDER BY capturedAt DESC LIMIT 1"
+            "ORDER BY capturedAt DESC, id DESC LIMIT 1"
     )
     suspend fun latestFor(trackedRouteId: Long): PriceSnapshotEntity?
 
@@ -509,10 +527,16 @@ import androidx.room.RoomDatabase
 import com.sypark.flightdeal.data.local.entity.PriceSnapshotEntity
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 
+/**
+ * `exportSchema = true`로 둔다. 스키마 JSON이 있어야 나중에 컬럼을 바꿀 때
+ * 마이그레이션을 테스트할 수 있다. 없으면 두 갈래뿐이다 — 마이그레이션을 안 쓰고
+ * 앱이 열리자마자 크래시하거나, `fallbackToDestructiveMigration()`으로
+ * 사용자가 등록한 추적 노선과 이력을 통째로 조용히 지우거나.
+ */
 @Database(
     entities = [TrackedRouteEntity::class, PriceSnapshotEntity::class],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class FlightDealDatabase : RoomDatabase() {
     abstract fun trackedRouteDao(): TrackedRouteDao
@@ -603,7 +627,7 @@ class DaoTest {
         originIata = "ICN",
         destinationIata = destination,
         departDate = "2026-10-12",
-        returnDate = "2026-10-16",
+        returnDate = "2026-10-16",  // 편도는 빈 문자열
         tripType = "ROUND_TRIP",
         targetPrice = 280_000,
         createdAt = 1_800_000_000L,
@@ -675,6 +699,26 @@ class DaoTest {
     }
 
     @Test
+    fun `기준 시각과 정확히 같은 이력은 포함된다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 200))
+
+        // 조회는 >= 다. > 로 바뀌면 보관 기한과 같은 시각의 스냅샷이 그래프에서 사라진다.
+        assertEquals(1, snapshots.observeFor(id, sinceEpochSecond = 200).first().size)
+    }
+
+    @Test
+    fun `기준 시각과 정확히 같은 이력은 지워지지 않는다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 200))
+
+        snapshots.deleteOlderThan(epochSecond = 200)
+
+        // 삭제는 < 다. <= 로 바뀌면 조회 조건(>=)과 겹쳐 한 주기 일찍 사라진다.
+        assertEquals(1, snapshots.observeFor(id, sinceEpochSecond = 0).first().size)
+    }
+
+    @Test
     fun `다른 노선의 이력은 섞이지 않는다`() = runTest {
         val tokyo = routes.insert(route("TYO"))
         val bangkok = routes.insert(route("BKK"))
@@ -692,7 +736,7 @@ class DaoTest {
 ./gradlew :data:testDebugUnitTest --tests "*DaoTest*"
 ```
 
-기대: PASS (7건).
+기대: PASS (9건).
 
 `추적을 해제하면 이력도 함께 사라진다`가 실패하면 외래키 강제가 걸리지 않은 것이다.
 Room은 기본으로 켜지만 인메모리 빌더에서 다르게 동작할 수 있다.
@@ -705,7 +749,7 @@ CASCADE가 실제로 동작하지 않으면 추적을 해제해도 이력이 DB�
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 38, `:data` 63(56+7), `:presentation` 14.
+기대: `:domain` 38, `:data` 65(56+9), `:presentation` 14.
 
 ```bash
 git add gradle data
@@ -959,6 +1003,7 @@ class RoomTrackedRouteRepositoryTest {
 ```kotlin
 package com.sypark.flightdeal.data.local
 
+import android.util.Log
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 import com.sypark.flightdeal.data.remote.AirportNames
 import com.sypark.flightdeal.domain.model.Airport
@@ -979,9 +1024,9 @@ class RoomTrackedRouteRepository(
 ) : TrackedRouteRepository {
 
     override fun observeAll(): Flow<List<TrackedRoute>> =
-        dao.observeAll().map { entities -> entities.map { it.toDomain() } }
+        dao.observeAll().map { entities -> entities.mapNotNull { it.toDomain() } }
 
-    override suspend fun getAll(): List<TrackedRoute> = dao.getAll().map { it.toDomain() }
+    override suspend fun getAll(): List<TrackedRoute> = dao.getAll().mapNotNull { it.toDomain() }
 
     override suspend fun add(
         route: Route,
@@ -1007,18 +1052,24 @@ class RoomTrackedRouteRepository(
      * DB에는 IATA만 저장한다. 도시 이름은 표시용이므로 읽을 때 채운다 —
      * 이름이 바뀌어도 저장된 데이터를 건드릴 일이 없다.
      */
-    private fun TrackedRouteEntity.toDomain() = TrackedRoute(
-        id = id,
+    private fun TrackedRouteEntity.toDomain(): TrackedRoute? = runCatching {
+        TrackedRoute(
+            id = id,
         route = Route(
             origin = Airport(originIata, AirportNames.cityOf(originIata), ""),
             destination = Airport(destinationIata, AirportNames.cityOf(destinationIata), ""),
         ),
         departDate = LocalDate.parse(departDate),
-        returnDate = returnDate?.let(LocalDate::parse),
+        returnDate = returnDate.takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
         tripType = TripType.valueOf(tripType),
         targetPrice = targetPrice?.let(::Won),
-        createdAt = Instant.ofEpochSecond(createdAt),
-    )
+            createdAt = Instant.ofEpochSecond(createdAt),
+        )
+    }.onFailure { Log.w(TAG, "읽을 수 없는 추적 항목을 건너뛴다: id=$id", it) }.getOrNull()
+
+    private companion object {
+        const val TAG = "TrackedRoutes"
+    }
 }
 ```
 
@@ -1031,6 +1082,7 @@ import com.sypark.flightdeal.data.local.entity.PriceSnapshotEntity
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
+import android.util.Log
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -1055,21 +1107,35 @@ class RoomPriceHistoryRepository(
         dao.latestFor(trackedRouteId)?.toDomain()
 
     override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
-        dao.observeFor(trackedRouteId, cutoff(days)).map { list -> list.map { it.toDomain() } }
+        dao.observeFor(trackedRouteId, cutoff(days)).map { list -> list.mapNotNull { it.toDomain() } }
 
     override suspend fun pruneOlderThan(days: Int) = dao.deleteOlderThan(cutoff(days))
 
-    private fun cutoff(days: Int): Long =
-        clock.instant().epochSecond - days.toLong() * SECONDS_PER_DAY
+    /**
+     * 음수를 받으면 기준 시각이 미래가 되고, `capturedAt < 미래`는 모든 행에 참이라
+     * 이력 전체가 지워진다. 조용히 0으로 보정하면 부르는 쪽의 계산 실수가 숨는다.
+     */
+    private fun cutoff(days: Int): Long {
+        require(days >= 0) { "days는 음수일 수 없다: $days" }
+        return clock.instant().epochSecond - days.toLong() * SECONDS_PER_DAY
+    }
 
-    private fun PriceSnapshotEntity.toDomain() = PriceSnapshot(
-        trackedRouteId = trackedRouteId,
-        price = Won(price),
-        tripType = TripType.valueOf(tripType),
-        capturedAt = Instant.ofEpochSecond(capturedAt),
-    )
+    /**
+     * 읽을 수 없는 행은 버린다. `TripType.valueOf`는 모르는 이름에 예외를 던지는데,
+     * 그게 `map` 안에서 터지면 행 하나 때문에 목록 전체가 죽는다 —
+     * 열거형 값을 바꾸거나 앱 버전이 섞이면 실제로 일어난다.
+     */
+    private fun PriceSnapshotEntity.toDomain(): PriceSnapshot? = runCatching {
+        PriceSnapshot(
+            trackedRouteId = trackedRouteId,
+            price = Won(price),
+            tripType = TripType.valueOf(tripType),
+            capturedAt = Instant.ofEpochSecond(capturedAt),
+        )
+    }.onFailure { Log.w(TAG, "읽을 수 없는 스냅샷을 건너뛴다: id=$id", it) }.getOrNull()
 
     private companion object {
+        const val TAG = "PriceHistory"
         const val SECONDS_PER_DAY = 86_400L
     }
 }
@@ -1109,7 +1175,7 @@ class RoomPriceHistoryRepository(
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 38, `:data` 72(63+9), `:presentation` 14.
+기대: `:domain` 38, `:data` 74(65+9), `:presentation` 14.
 
 ```bash
 git add domain data
@@ -1429,9 +1495,10 @@ git commit -m "feat: 노선 추적 등록·해제 UseCase 추가"
     }
 ```
 
-**기존 `viewModel(behavior)` 헬퍼도 고쳐야 한다.** `DealFeedViewModel`의 생성자가 인자를
-둘 받게 되므로, 헬퍼가 `TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory())`를
-함께 넘기도록 바꾼다. 기존 테스트의 단언은 하나도 바꾸지 않는다.
+**`DealFeedViewModel`을 생성하는 곳을 전부 고쳐야 한다.** 생성자가 인자를 둘 받게 되므로
+공용 `viewModel(behavior)` 헬퍼뿐 아니라 테스트 안에서 직접 생성하는 자리들도
+`TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory())`를 함께 넘겨야 컴파일된다.
+기존 테스트의 단언은 하나도 바꾸지 않는다.
 
 - [ ] **Step 2: 테스트 실패 확인**
 
@@ -1502,7 +1569,7 @@ import를 추가한다.
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 43, `:data` 72, `:presentation` 15(14+1).
+기대: `:domain` 45, `:data` 80, `:presentation` 15(14+1).
 
 ```bash
 git add presentation
@@ -1522,7 +1589,7 @@ git commit -m "feat: 딜 카드에서 노선을 추적 등록"
 - Test: `presentation/src/test/java/com/sypark/flightdeal/tracking/TrackingViewModelTest.kt`
 
 **Interfaces:**
-- Consumes: `TrackedRouteRepository`, `PriceHistoryRepository`, `UntrackRouteUseCase`, `DetectPriceChangesUseCase`
+- Consumes: `TrackedRouteRepository`, `PriceHistoryRepository`, `UntrackRouteUseCase`
 - Produces:
   - `TrackedItem(tracked: TrackedRoute, latest: PriceSnapshot?, previous: PriceSnapshot?)`
   - `TrackingUiState` — `Loading` / `Empty` / `Success(items: List<TrackedItem>)`
@@ -1680,6 +1747,33 @@ class TrackingViewModelTest {
     }
 
     @Test
+    fun `새 가격이 저장되면 화면이 바로 갱신된다`() = runTest {
+        val snapshots = MutableStateFlow(listOf(snapshot(300_000, 100)))
+        val history = object : PriceHistoryRepository {
+            override suspend fun append(snapshot: PriceSnapshot) = Unit
+            override suspend fun latest(trackedRouteId: Long): PriceSnapshot? = null
+            override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
+                snapshots
+            override suspend fun pruneOlderThan(days: Int) = Unit
+        }
+
+        viewModel(FakeRoutes(listOf(tracked())), history).uiState.test {
+            awaitItem()
+            assertEquals(
+                Won(300_000),
+                (awaitItem() as TrackingUiState.Success).items.single().latest!!.price,
+            )
+
+            // 워커가 새 가격을 저장한 상황. 탭을 나갔다 오지 않아도 보여야 한다.
+            snapshots.value = listOf(snapshot(300_000, 100), snapshot(280_000, 200))
+
+            val updated = (awaitItem() as TrackingUiState.Success).items.single()
+            assertEquals(Won(280_000), updated.latest!!.price)
+            assertEquals(Won(300_000), updated.previous!!.price)
+        }
+    }
+
+    @Test
     fun `해제하면 목록에서 빠진다`() = runTest {
         val routes = FakeRoutes(listOf(tracked()))
         val vm = viewModel(routes, FakeHistory(listOf(snapshot(300_000, 100))))
@@ -1719,9 +1813,13 @@ import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import com.sypark.flightdeal.domain.usecase.UntrackRouteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -1734,12 +1832,20 @@ class TrackingViewModel @Inject constructor(
     private val untrackRoute: UntrackRouteUseCase,
 ) : ViewModel() {
 
+    /**
+     * 노선별 이력 Flow를 그대로 묶는다. `.first()`로 한 번 찍어 오면 구독이 바로 끊겨
+     * 워커가 새 가격을 저장해도 화면이 안 바뀐다 — 가격 추적 화면이 가격 변화를
+     * 못 보여주게 된다. `combine`은 조회를 병렬로 돌리기도 한다.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<TrackingUiState> = trackedRoutes.observeAll()
-        .map { routes ->
+        .flatMapLatest { routes ->
             if (routes.isEmpty()) {
-                TrackingUiState.Empty
+                flowOf(TrackingUiState.Empty)
             } else {
-                TrackingUiState.Success(routes.map { it.withRecentPrices() })
+                combine(routes.map { it.itemFlow() }) { items ->
+                    TrackingUiState.Success(items.toList())
+                }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrackingUiState.Loading)
@@ -1752,14 +1858,14 @@ class TrackingViewModel @Inject constructor(
      * 마지막 두 관측값을 붙인다. 하나뿐이면 [TrackedItem.previous]가 null이고
      * 화면은 변동을 표시하지 않는다 — 등록 직후엔 비교할 대상이 없다.
      */
-    private suspend fun TrackedRoute.withRecentPrices(): TrackedItem {
-        val recent = history.observeHistory(id, days = HISTORY_DAYS).first()
-        return TrackedItem(
-            tracked = this,
-            latest = recent.lastOrNull(),
-            previous = recent.getOrNull(recent.lastIndex - 1),
-        )
-    }
+    private fun TrackedRoute.itemFlow(): Flow<TrackedItem> =
+        history.observeHistory(id, HISTORY_DAYS).map { recent ->
+            TrackedItem(
+                tracked = this,
+                latest = recent.lastOrNull(),
+                previous = recent.getOrNull(recent.lastIndex - 1),
+            )
+        }
 
     private companion object {
         const val HISTORY_DAYS = 90
@@ -1960,7 +2066,7 @@ fun TrackingScreen(
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 43, `:data` 72, `:presentation` 19(15+4).
+기대: `:domain` 45, `:data` 80, `:presentation` 20(16+4).
 
 ```bash
 git add presentation
@@ -2289,7 +2395,7 @@ class CheckTrackedPricesUseCase @Inject constructor(
 ./gradlew :domain:test
 ```
 
-기대: `:domain` 51(43+8).
+기대: `:domain` 53(45+8).
 
 **`가격이 내리면 변동을 돌려준다`가 실패하면** `currentPrice`의 날짜 필터를 확인한다.
 테스트의 `quote(280_000)`은 `departDate`가 추적 항목과 같으므로 통과해야 한다.
@@ -2579,7 +2685,7 @@ class FlightDealApp : Application(), Configuration.Provider {
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 51, `:data` 72, `:presentation` 19. BUILD SUCCESSFUL.
+기대: `:domain` 53, `:data` 80, `:presentation` 20. BUILD SUCCESSFUL.
 
 - [ ] **Step 11: 에뮬레이터에서 확인**
 
@@ -2623,6 +2729,491 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 
 ---
 
+## Task 4b: 같은 노선을 두 번 등록하지 않기 (Task 4 리뷰에서 발견)
+
+**Files:**
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/entity/TrackedRouteEntity.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/TrackedRouteDao.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/RoomTrackedRouteRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/local/RoomTrackedRouteRepositoryTest.kt`
+- Modify: `domain/src/test/java/com/sypark/flightdeal/domain/usecase/TrackRouteUseCaseTest.kt`
+- Regenerate: `data/schemas/com.sypark.flightdeal.data.local.FlightDealDatabase/1.json`
+
+### 무엇이 잘못됐나
+
+같은 노선·같은 날짜·같은 여정 종류를 두 번 등록하는 것을 막는 게 없다. 추적 버튼을
+두 번 누르면 행이 둘 생기고, 목록에 같은 카드가 두 장 뜨고, 가격이 바뀌면 **알림이 두 번**
+가고, 워커는 레이트 리밋이 걸린 API를 두 번 호출한다.
+
+**지금 고치면 공짜다.** 스키마가 아직 버전 1이고 출시된 적이 없다. 나중에 고치려면
+유니크 인덱스를 추가하는 마이그레이션을 써야 하고, 이미 중복이 쌓인 기기에서는
+인덱스 생성 자체가 실패한다.
+
+### 고침
+
+**엔티티에 유니크 인덱스를 건다.** `TrackedRouteEntity`의 `indices`에 추가한다.
+
+```kotlin
+@Entity(
+    tableName = "tracked_route",
+    indices = [
+        Index(
+            value = ["originIata", "destinationIata", "departDate", "returnDate", "tripType"],
+            unique = true,
+        ),
+    ],
+)
+```
+
+`androidx.room.Index` import를 추가한다.
+
+**DAO가 충돌을 조용히 넘기고, 기존 id를 찾을 수 있게 한다.**
+
+```kotlin
+    /** 이미 있으면 -1을 돌려준다. 중복 등록은 오류가 아니라 "이미 추적 중"이다. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(entity: TrackedRouteEntity): Long
+
+    @Query(
+        "SELECT id FROM tracked_route WHERE originIata = :origin " +
+            "AND destinationIata = :destination AND departDate = :departDate " +
+            "AND returnDate IS :returnDate AND tripType = :tripType LIMIT 1"
+    )
+    suspend fun findId(
+        origin: String,
+        destination: String,
+        departDate: String,
+        returnDate: String?,
+        tripType: String,
+    ): Long?
+```
+
+`androidx.room.OnConflictStrategy` import를 추가한다.
+
+**편도의 귀국일을 `NULL`로 저장하면 안 된다.** SQLite의 유니크 인덱스는 `NULL`을 서로 다른
+값으로 취급한다. 편도 두 건은 `returnDate`가 둘 다 `NULL`이어도 충돌하지 않으므로
+`IGNORE`가 발동하지 않고, 중복이 그대로 쌓인다. 왕복만 막히고 편도는 조용히 샌다.
+
+그래서 엔티티의 `returnDate`를 **널 불가 `String`으로 바꾸고 편도는 빈 문자열을 저장한다.**
+도메인 모델은 `LocalDate?`를 그대로 쓰고, 변환은 저장소 한 곳에서만 한다.
+
+`TrackedRouteEntity`:
+
+```kotlin
+    /** 편도는 빈 문자열이다. NULL로 두면 유니크 인덱스가 편도 중복을 못 잡는다. */
+    val returnDate: String,
+```
+
+`findId`의 조건도 평범한 `=`로 돌아간다.
+
+```kotlin
+    @Query(
+        "SELECT id FROM tracked_route WHERE originIata = :origin " +
+            "AND destinationIata = :destination AND departDate = :departDate " +
+            "AND returnDate = :returnDate AND tripType = :tripType LIMIT 1"
+    )
+    suspend fun findId(
+        origin: String,
+        destination: String,
+        departDate: String,
+        returnDate: String,
+        tripType: String,
+    ): Long?
+```
+
+**저장소가 이미 있으면 그 id를 돌려준다.** `add`의 마지막을 바꾼다.
+
+```kotlin
+    ): Long {
+        val entity = TrackedRouteEntity(
+            originIata = route.origin.iata,
+            destinationIata = route.destination.iata,
+            departDate = departDate.toString(),
+            // 편도는 빈 문자열. NULL이면 유니크 인덱스가 편도 중복을 놓친다.
+            returnDate = returnDate?.toString().orEmpty(),
+            tripType = tripType.name,
+            targetPrice = targetPrice?.amount,
+            createdAt = clock.instant().epochSecond,
+        )
+
+        val inserted = dao.insert(entity)
+        // 이미 추적 중이면 새로 만들지 않고 그것의 id를 돌려준다.
+        // 등록을 멱등하게 두면 버튼을 두 번 눌러도 카드가 하나만 남는다.
+        return if (inserted != -1L) {
+            inserted
+        } else {
+            dao.findId(
+                origin = entity.originIata,
+                destination = entity.destinationIata,
+                departDate = entity.departDate,
+                returnDate = entity.returnDate,
+                tripType = entity.tripType,
+            ) ?: error("중복이라 했는데 찾을 수 없다")
+        }
+    }
+```
+
+### 테스트
+
+`RoomTrackedRouteRepositoryTest.kt`에 추가한다.
+
+```kotlin
+    @Test
+    fun `같은 노선을 두 번 등록해도 하나만 남는다`() = runTest {
+        val first = addTokyo()
+        val second = addTokyo()
+
+        // 두 번 누르면 카드가 두 장 뜨고 알림도 두 번 간다.
+        assertEquals(first, second)
+        assertEquals(1, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `여정 종류가 다르면 따로 등록된다`() = runTest {
+        val roundTrip = addTokyo(TripType.ROUND_TRIP)
+        val oneWay = addTokyo(TripType.ONE_WAY)
+
+        // 왕복과 편도는 가격대가 다르다. 별개의 추적이다.
+        assertNotEquals(roundTrip, oneWay)
+        assertEquals(2, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `귀국일이 없는 편도끼리도 중복으로 잡힌다`() = runTest {
+        val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+        val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+
+        // SQLite의 유니크 인덱스는 NULL을 서로 다른 값으로 본다.
+        // 편도의 귀국일을 NULL로 저장하면 중복이 그대로 쌓인다.
+        assertEquals(first, second)
+        assertEquals(1, tracked.observeAll().first().size)
+    }
+```
+
+`org.junit.Assert.assertNotEquals` import를 추가한다.
+
+### 테스트 가짜의 충실도도 함께 고친다
+
+`TrackRouteUseCaseTest.kt`의 `FakeTrackedRoutes.add`가 `tripType`만 기록하고 나머지를
+버린다. `targetPrice`를 항상 null로 넘기는 구현도 다섯 테스트를 통과한다.
+`targetPrice`는 목표가 도달 알림의 근거다.
+
+```kotlin
+    private class FakeTrackedRoutes : TrackedRouteRepository {
+        var lastRoute: Route? = null
+        var lastDepartDate: LocalDate? = null
+        var lastReturnDate: LocalDate? = null
+        var lastTripType: TripType? = null
+        var lastTargetPrice: Won? = null
+        var removed: Long? = null
+
+        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
+        override suspend fun getAll(): List<TrackedRoute> = emptyList()
+        override suspend fun add(
+            route: Route,
+            departDate: LocalDate,
+            returnDate: LocalDate?,
+            tripType: TripType,
+            targetPrice: Won?,
+        ): Long {
+            lastRoute = route
+            lastDepartDate = departDate
+            lastReturnDate = returnDate
+            lastTripType = tripType
+            lastTargetPrice = targetPrice
+            return 42L
+        }
+        override suspend fun remove(id: Long) { removed = id }
+    }
+```
+
+기존 `added` 목록을 쓰던 테스트는 `lastTripType`을 보도록 고치고, 아래를 추가한다.
+
+```kotlin
+    @Test
+    fun `시세의 노선과 날짜, 목표가를 그대로 넘긴다`() = runTest {
+        val routes = FakeTrackedRoutes()
+        val useCase = TrackRouteUseCase(routes, FakeHistory())
+
+        useCase(quote, TripType.ROUND_TRIP, targetPrice = Won(280_000))
+
+        assertEquals(quote.route, routes.lastRoute)
+        assertEquals(quote.departDate, routes.lastDepartDate)
+        assertEquals(quote.returnDate, routes.lastReturnDate)
+        // 목표가는 목표 도달 알림의 근거다. 흘리면 알림이 영영 안 온다.
+        assertEquals(Won(280_000), routes.lastTargetPrice)
+    }
+```
+
+### 등록이 멱등해지면 스냅샷도 멱등해야 한다
+
+`add`가 기존 id를 돌려주게 되면서 `TrackRouteUseCase`가 그걸 모른 채 새 스냅샷을 남긴다.
+`latestFor`가 그것을 최신으로 잡으므로 **다음 비교의 기준선이 리셋된다.**
+행 하나로 막아놓고 스냅샷이 늘면 반쪽짜리 수정이다.
+
+첫 스냅샷의 존재 이유는 "비교 대상 만들기"다. 이미 있으면 만들지 않는다.
+
+```kotlin
+        val id = trackedRoutes.add(
+            route = quote.route,
+            departDate = quote.departDate,
+            returnDate = quote.returnDate,
+            tripType = tripType,
+            targetPrice = targetPrice,
+        )
+
+        // 이미 추적 중이면 기준선이 있다. 덧쓰면 다음 변동 판정이 어긋난다.
+        // 등록은 됐는데 스냅샷 쓰기가 실패했던 노선은 여기서 채워진다.
+        if (history.latest(id) == null) {
+            history.append(
+                PriceSnapshot(
+                    trackedRouteId = id,
+                    price = quote.price,
+                    tripType = tripType,
+                    capturedAt = quote.foundAt,
+                )
+            )
+        }
+
+        return id
+```
+
+테스트를 추가한다. `FakeHistory.latest`가 `appended.lastOrNull()`을 돌려주므로
+두 번째 호출에서 이미 하나가 있는 상태가 재현된다.
+
+```kotlin
+    @Test
+    fun `이미 추적 중이면 스냅샷을 덧쓰지 않는다`() = runTest {
+        val history = FakeHistory()
+        val useCase = TrackRouteUseCase(FakeTrackedRoutes(), history)
+
+        useCase(quote, TripType.ROUND_TRIP)
+        useCase(quote, TripType.ROUND_TRIP)
+
+        // 덧쓰면 그게 최신이 되어 다음 비교의 기준선이 리셋된다.
+        assertEquals(1, history.appended.size)
+    }
+```
+
+### 스키마 재생성
+
+유니크 인덱스는 테이블 구조를 바꾼다. 빌드하면 `data/schemas/.../1.json`이 갱신되므로
+**함께 커밋한다.** 버전은 1 그대로다 — 출시된 적이 없으므로 마이그레이션이 필요 없다.
+
+---
+
+## Task 7b: 기준가와 폴링을 같은 규칙으로 (전체 리뷰에서 발견한 Critical)
+
+**Files:**
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/FlightPriceRepository.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/CheckTrackedPricesUseCase.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepository.kt`
+- Modify: 인터페이스를 구현하는 모든 테스트 더블
+- Test: `data/.../remote/TravelpayoutsFlightPriceRepositoryTest.kt`, `domain/.../usecase/CheckTrackedPricesUseCaseTest.kt`
+
+### 무엇이 잘못됐나
+
+**등록 시 기준가와 워커의 폴링 값이 서로 다른 규칙으로 뽑힌다.**
+
+기준가는 딜 피드가 보여준 시세다. 그 시세는 `cheapestDeals`가
+`GatePolicy.prioritize(..., minCount = 1).firstOrNull()`로 고른 것 — **한국에서 예약 가능한
+예약처의 가격**이며 일부러 전체 최저가가 아니다.
+
+워커는 전혀 다른 규칙을 쓴다.
+
+```kotlin
+result.data.filter { it.departDate == tracked.departDate }.minByOrNull { it.price.amount }?.price
+```
+
+예약처를 가리지 않는 무조건 최저가다. 두 규칙이 같은 값을 내는 건 우연뿐이고, 어긋나면
+**워커 값이 체계적으로 더 싸다.** 그래서 등록 후 첫 실행에서 있지도 않은 하락이 잡힌다.
+사용자는 알림을 받고 예약처에 들어가는데 가격이 그대로다.
+
+픽스처 `v3-ICN-TYO-roundtrip.json`의 2026-10-06에는 `301,430 / Farera`와
+`324,513 / City.Travel`이 함께 있다. 피드가 Trip.com 행을 골라 기준가로 저장하면,
+여섯 시간 뒤 워커는 같은 달에서 301,430(러시아 시장 예약처)을 집어 9% 하락을 만들어낸다.
+
+**둘째, 귀국일을 맞추지 않는다.** 필터가 `departDate`만 본다. 같은 픽스처의 2026-10-13에는
+귀국일 10/16과 10/20이 섞여 있다. 10/13–10/16을 추적하는데 10/20 귀국편 가격이 잡히고,
+그 행이 캐시에서 밀려나면 또 다른 조합이 최저가가 되어 **가격 변동이 없어도 여섯 시간마다
+알림이 온다.**
+
+**태스크별 리뷰로는 볼 수 없었다.** 두 규칙이 다른 클래스에 살고, 모든 테스트 가짜가
+둘을 일치시켜 놓았다. 선택 규칙을 한 곳에 이름 붙이기 전에는 이걸 잡는 테스트를 쓸 수 없다.
+
+### 고침
+
+**"이 여정의 현재 추적 가격"을 답하는 함수를 하나 두고, 등록과 폴링이 그것만 쓴다.**
+
+`FlightPriceRepository`에 추가한다.
+
+```kotlin
+    /**
+     * 추적 중인 여정 하나의 현재 가격.
+     *
+     * 등록 시점의 기준가와 이후 폴링은 **반드시 같은 규칙**으로 골라야 한다.
+     * 다르게 고르면 첫 비교에서 있지도 않은 변동이 잡히고, 사용자는 알림을 받고
+     * 예약처에 들어가서 가격이 그대로인 것을 본다.
+     *
+     * 출발일과 귀국일을 모두 맞춘다. 출발일만 맞추면 귀국일이 다른 조합이 잡혀
+     * 가격이 그대로여도 매 실행마다 변동으로 읽힌다.
+     */
+    suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won>
+```
+
+`TravelpayoutsFlightPriceRepository`에서 **딜 피드와 같은 예약처 규칙**을 적용한다.
+
+```kotlin
+    override suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won> = callSingle {
+        val quotes = fetch(
+            originIata = route.origin.iata,
+            destinationIata = route.destination.iata,
+            month = YearMonth.from(departDate),
+            tripType = tripType,
+        ).filter { it.quote.departDate == departDate && it.quote.returnDate == returnDate }
+
+        // 딜 피드가 고른 것과 같은 규칙이다. 여기서 규칙이 갈리면 가짜 변동이 생긴다.
+        GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()?.quote?.price
+    }
+```
+
+`call`이 리스트를 다루므로 단일 값용 헬퍼를 하나 더 둔다. 예외 매핑은 그대로 재사용한다.
+
+```kotlin
+    private suspend fun <T : Any> callSingle(block: suspend () -> T?): AppResult<T> =
+        when (val result = call { listOfNotNull(block()) }) {
+            is AppResult.Success -> AppResult.Success(result.data.first())
+            AppResult.Empty -> AppResult.Empty
+            is AppResult.NetworkError -> result
+            is AppResult.Unknown -> result
+        }
+```
+
+`CheckTrackedPricesUseCase.currentPrice`를 통째로 바꾼다.
+
+```kotlin
+    /** 한 노선이 실패했다고 나머지를 포기하지 않는다. */
+    private suspend fun currentPrice(tracked: TrackedRoute): Won? =
+        when (
+            val result = prices.trackedPrice(
+                route = tracked.route,
+                departDate = tracked.departDate,
+                returnDate = tracked.returnDate,
+                tripType = tracked.tripType,
+            )
+        ) {
+            is AppResult.Success -> result.data
+            else -> null
+        }
+```
+
+`Won` import를 추가하고, 더 이상 쓰지 않으면 `YearMonth` import를 정리한다.
+
+`FakeFlightPriceRepository`에도 구현을 더한다. 픽스처의 같은 여정을 골라 돌려준다.
+
+```kotlin
+    override suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won> = respond {
+        FakeDealFixtures.monthlyPrices(route, YearMonth.from(departDate))
+            .firstOrNull { it.departDate == departDate }
+            ?.let { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+            ?.price
+    }
+
+```
+
+### 테스트
+
+`TravelpayoutsFlightPriceRepositoryTest.kt`에 추가한다. 픽스처에 러시아 예약처가 더 싸게
+들어있는 날짜가 있으므로, 그날을 골라 **더 싼 쪽이 아니라 예약 가능한 쪽**이 나오는지 본다.
+
+```kotlin
+    @Test
+    fun `추적 가격도 한국에서 예약 가능한 예약처를 우선한다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T09:20:00+09:00",
+                   "return_at":"2026-10-12T10:40:00+09:00","price":301430,"airline":"KE",
+                   "gate":"Farera","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "return_at":"2026-10-12T10:40:00+09:00","price":330000,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = repository.trackedPrice(
+            route = route,
+            departDate = LocalDate.of(2026, 10, 6),
+            returnDate = LocalDate.of(2026, 10, 12),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 더 싼 301,430은 한국에서 결제가 안 되는 예약처다. 딜 피드가 고른 것과 같아야 한다 —
+        // 다르면 등록 직후 첫 실행에서 있지도 않은 하락이 잡힌다.
+        assertEquals(Won(330_000), (result as AppResult.Success).data)
+    }
+
+    @Test
+    fun `귀국일이 다르면 같은 여정으로 치지 않는다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-13T09:20:00+09:00",
+                   "return_at":"2026-10-20T10:40:00+09:00","price":320806,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-13T15:15:00+09:00",
+                   "return_at":"2026-10-16T10:40:00+09:00","price":326181,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = repository.trackedPrice(
+            route = route,
+            departDate = LocalDate.of(2026, 10, 13),
+            returnDate = LocalDate.of(2026, 10, 16),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 출발일만 맞추면 10/20 귀국편이 잡혀 매번 가짜 변동이 뜬다.
+        assertEquals(Won(326_181), (result as AppResult.Success).data)
+    }
+```
+
+`CheckTrackedPricesUseCaseTest.kt`의 `StubPrices`를 `trackedPrice`를 답하도록 바꾸고,
+전달된 인자를 기록해 아래를 확인한다.
+
+```kotlin
+    @Test
+    fun `추적 항목의 여정을 그대로 조회한다`() = runTest {
+        val prices = StubPrices(AppResult.Success(Won(280_000)))
+
+        useCase(StubRoutes(listOf(tracked())), StubHistory(snapshot(300_000)), prices).invoke()
+
+        // 등록 때와 같은 여정을 물어야 같은 규칙으로 고른 값이 온다.
+        assertEquals(LocalDate.of(2026, 10, 12), prices.seenDepartDate)
+        assertEquals(LocalDate.of(2026, 10, 16), prices.seenReturnDate)
+        assertEquals(TripType.ROUND_TRIP, prices.seenTripType)
+    }
+```
+
 ## 완료 기준
 
 - [ ] 딜 카드에서 노선을 추적 등록할 수 있고, 등록 즉시 첫 스냅샷이 남는다
@@ -2635,7 +3226,8 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - [ ] 공항은 IATA로만 동일성을 판정한다
 - [ ] `:domain`에 안드로이드 타입도 Travelpayouts라는 단어도 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 51, `:data` 72, `:presentation` 19
+- [ ] 같은 노선을 두 번 등록해도 하나만 남는다
+- [ ] 전체 테스트 통과. `:domain` 53, `:data` 80, `:presentation` 20
 
 ## 다음 계획서
 
@@ -2650,3 +3242,201 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - **다크 팔레트 없음.** 라이트 고정
 - **`transfers`/`duration`이 도메인까지 오지 않는다.** 경유편이 직항과 같은 무게로 표시된다
 - 마커 미발급 — 딥링크는 열리되 커미션이 안 붙는다
+- 스냅샷 테이블에 `capturedAt` 인덱스 없음. 10개 추적 기준 3,600행이라 풀스캔이 마이크로초다. 실제로 느려지면 그때 근거를 갖고 붙인다
+
+---
+
+## Task 7c: 알림이 실제로 전달된 뒤에만 기준선을 옮긴다
+
+**왜 필요한가.** 지금은 폴링한 값을 무조건 이력에 쌓고, 다음 실행의 비교 대상은
+"마지막으로 관측한 값"이다. 관측과 통보가 같은 것으로 취급되기 때문에, 통보가
+실패하면 변동이 영구히 사라진다. 세 갈래로 새어나간다.
+
+1. **재시도가 변동을 지운다.** `PriceCheckWorker`는 예외가 나면 `Result.retry()`를
+   돌려주고 `doWork()` 전체가 다시 실행된다. 1차 시도에서 도쿄 스냅샷을 이미 썼다면,
+   재시도에서 도쿄의 비교 대상은 방금 쓴 그 값이다. 변동은 없던 일이 된다.
+   **재시도가 전달하려던 바로 그 변동을 파괴한다.**
+2. **알림 권한이 없으면 조용히 흘러간다.** 권한이 꺼져 있어도 스냅샷은 계속 쌓인다.
+   사용자가 나중에 권한을 켜도, 그동안의 변동은 이미 기준선에 흡수돼 다시 뜨지 않는다.
+3. **프로세스가 중간에 죽으면 그만큼 사라진다.** 스냅샷을 쓴 뒤 `notify` 전에
+   워커가 종료되면 그 변동은 어디에도 남지 않는다.
+
+**해법.** 두 가지를 분리한다.
+
+- **관측 이력** (`price_snapshot`) — 폴링할 때마다 쌓는다. 추이 그래프의 재료다. 지금 그대로.
+- **통보 기준선** (`tracked_route.notifiedPrice`) — **사용자가 마지막으로 실제로 통보받은 값.**
+  변동 판정은 이것과 비교하고, 알림이 전달된 뒤에만 옮긴다.
+
+전달에 실패하면 기준선이 그대로 남아 다음 실행에서 같은 변동이 다시 잡힌다.
+남는 위험은 "알림은 떴는데 기준선 갱신 전에 죽어서 다음 실행에 한 번 더 뜨는" 중복인데,
+**놓치는 것보다 중복이 낫다.** 이 교환은 의도된 것이다.
+
+**Files:**
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/model/TrackedRoute.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/TrackedRouteRepository.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/CheckTrackedPricesUseCase.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/TrackRouteUseCase.kt`
+- Create: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/ConfirmNotifiedUseCase.kt`
+- Modify: `data/.../local/entity/TrackedRouteEntity.kt`, `TrackedRouteDao.kt`, `RoomTrackedRouteRepository.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/FlightDealDatabase.kt`
+- Create: `data/src/main/java/com/sypark/flightdeal/data/local/Migrations.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/di/DatabaseModule.kt`
+- Modify: `presentation/.../worker/PriceCheckWorker.kt`, `PriceChangeNotifier.kt`
+
+### Step 1: 도메인에 기준선을 세운다
+
+`TrackedRoute`에 필드를 더한다:
+
+```kotlin
+    /**
+     * 사용자가 마지막으로 **실제로 통보받은** 가격. 변동 판정의 기준선이다.
+     *
+     * 마지막으로 관측한 값과 다르다. 관측은 폴링할 때마다 쌓이지만 이 값은
+     * 알림이 전달된 뒤에만 옮긴다. 전달에 실패하면 그대로 남아 다음 실행에서
+     * 같은 변동이 다시 잡힌다 — 놓치는 것보다 중복이 낫다.
+     */
+    val notifiedPrice: Won?,
+```
+
+`createdAt` **앞에** 넣는다. 뒤에 붙이면 기존 호출부의 위치 인자가 조용히 밀린다.
+
+`TrackedRouteRepository`에 더한다:
+
+```kotlin
+    /** 알림이 실제로 전달된 뒤에만 부른다. */
+    suspend fun markNotified(id: Long, price: Won)
+```
+
+### Step 2: 판정이 기준선을 보게 한다
+
+`CheckTrackedPricesUseCase.check`에서 비교 대상을 바꾼다:
+
+```kotlin
+    private suspend fun check(tracked: TrackedRoute): PriceChange? {
+        val current = currentPrice(tracked) ?: return null
+
+        // 관측 이력은 폴링마다 쌓는다. 추이 그래프의 재료이고, 판정에는 쓰지 않는다.
+        history.append(
+            PriceSnapshot(
+                trackedRouteId = tracked.id,
+                price = current,
+                tripType = tracked.tripType,
+                capturedAt = clock.instant(),
+            )
+        )
+
+        // 비교는 마지막으로 통보한 값과 한다. 마지막으로 관측한 값과 비교하면
+        // 알림이 실패했을 때 그 변동이 기준선에 흡수돼 영영 사라진다.
+        return detectChanges(tracked, tracked.notifiedPrice, current)
+    }
+```
+
+`history.latest(tracked.id)` 호출은 사라진다. `PriceHistoryRepository.latest`는
+추적 화면이 계속 쓰므로 **인터페이스에서 지우지 마라.**
+
+### Step 3: `ConfirmNotifiedUseCase`
+
+```kotlin
+package com.sypark.flightdeal.domain.usecase
+
+import com.sypark.flightdeal.domain.model.PriceChange
+import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
+import javax.inject.Inject
+
+/**
+ * 알림이 전달된 것을 확인하고 기준선을 옮긴다.
+ * 알림을 실제로 띄운 뒤에만 부른다 — 먼저 부르면 놓친 변동이 생긴다.
+ */
+class ConfirmNotifiedUseCase @Inject constructor(
+    private val trackedRoutes: TrackedRouteRepository,
+) {
+    suspend operator fun invoke(changes: List<PriceChange>) {
+        changes.forEach { trackedRoutes.markNotified(it.trackedRouteId, it.current) }
+    }
+}
+```
+
+### Step 4: 등록할 때 기준선을 함께 심는다
+
+`TrackRouteUseCase`는 첫 스냅샷과 **같은 값**을 기준선으로 넣어야 한다. 비워두면
+등록 직후 첫 폴링에서 `null` 대비 비교가 되어 없던 변동이 잡힌다 —
+Task 7b가 고친 것과 같은 종류의 결함이다.
+
+`trackedRoutes.add(...)`에 `notifiedPrice = quote.price`를 넘기고,
+`RoomTrackedRouteRepository.add`가 그것을 컬럼에 쓴다. **이미 추적 중인 노선
+(insert가 -1을 돌려준 경우)에는 덮어쓰지 마라** — 기존 기준선이 살아 있어야 한다.
+
+### Step 5: Room 마이그레이션 1 → 2
+
+`TrackedRouteEntity`에 `val notifiedPrice: Int?`를 더한다 (`createdAt` 앞).
+`FlightDealDatabase`의 `version`을 2로 올린다.
+
+```kotlin
+package com.sypark.flightdeal.data.local
+
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+/**
+ * `fallbackToDestructiveMigration()`을 쓰지 않는다. 이 앱이 지키는 데이터는
+ * 며칠에 걸쳐 모은 가격 이력이고, 그건 다시 만들어낼 수 없다.
+ */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracked_route ADD COLUMN notifiedPrice INTEGER")
+    }
+}
+```
+
+기존 행은 `notifiedPrice`가 NULL이 된다. `DetectPriceChangesUseCase`가 이미
+`previous == null`을 "비교 대상 없음"으로 다루므로, 마이그레이션 직후 첫 실행은
+변동 없음이고 그때 기준선이 채워진다. 가짜 알림이 뜨지 않는다.
+
+`DatabaseModule`에 `.addMigrations(MIGRATION_1_2)`를 건다.
+
+### Step 6: 워커가 전달을 확인한다
+
+`PriceChangeNotifier.notify`가 `Boolean`을 돌려주게 한다 — 알림을 실제로 띄웠으면
+`true`, 권한이 없거나 띄울 것이 없으면 `false`. 모든 조기 `return`을 `return false`로,
+마지막 `notify(...)` 뒤에 `return true`를 둔다.
+
+```kotlin
+    override suspend fun doWork(): Result = try {
+        val changes = checkPrices()
+        // 전달된 뒤에만 기준선을 옮긴다. 순서가 뒤집히면 알림이 실패한 변동이 사라진다.
+        if (notifier.notify(changes, trackedRoutes.getAll())) {
+            confirmNotified(changes)
+        }
+        Log.d(TAG, "가격 확인 완료, 변동 ${changes.size}건")
+        Result.success()
+    } catch (e: Exception) {
+        Log.w(TAG, "가격 확인 실패", e)
+        if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+    }
+```
+
+### Step 7: 테스트
+
+`CheckTrackedPricesUseCaseTest`에 세 건을 더한다.
+
+1. **`알림을 확인하기 전에는 기준선이 그대로다`** — 300,000으로 등록된 노선을
+   250,000으로 두 번 연속 폴링한다. `ConfirmNotifiedUseCase`를 부르지 않는다.
+   두 번 다 `Direction.DOWN` 변동이 나와야 한다. 지금 구현에서는 두 번째가 빈 리스트다.
+2. **`확인한 뒤에는 같은 값에 다시 알리지 않는다`** — 위와 같되 1회차 뒤
+   `ConfirmNotifiedUseCase(changes)`를 부른다. 2회차는 빈 리스트여야 한다.
+3. **`관측 이력은 통보와 무관하게 쌓인다`** — 통보를 확인하지 않은 채 두 번 폴링해도
+   `history`에 스냅샷이 2건 쌓여 있어야 한다. 그래프가 알림 성공 여부에 인질로
+   잡히면 안 된다.
+
+`TrackRouteUseCaseTest`에 한 건:
+
+4. **`등록하면 기준선도 함께 심는다`** — 등록 직후 `getAll().first().notifiedPrice`가
+   견적 가격과 같아야 한다.
+
+**1번은 반드시 수정 전에 실패해야 한다.** 통과한다면 결함을 잘못 읽은 것이니 멈추고 보고할 것.
+
+### Step 8: 커밋
+
+```
+fix: 알림이 전달된 뒤에만 변동 기준선을 옮기도록 수정
+```

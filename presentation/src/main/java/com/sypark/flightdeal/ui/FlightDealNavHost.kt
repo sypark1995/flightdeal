@@ -7,19 +7,23 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sypark.flightdeal.feed.DealFeedScreen
+import com.sypark.flightdeal.tracking.TrackingScreen
 import com.sypark.flightdeal.ui.theme.Background
 import com.sypark.flightdeal.ui.theme.Indigo
 import com.sypark.flightdeal.ui.theme.TextSecondary
+import kotlinx.coroutines.flow.MutableStateFlow
 
 private enum class Tab(val route: String, val label: String) {
     Deals("deals", "특가"),
@@ -29,10 +33,23 @@ private enum class Tab(val route: String, val label: String) {
 }
 
 @Composable
-fun FlightDealNavHost() {
+fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow(false)) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    val shouldOpenTracking by openTracking.collectAsStateWithLifecycle()
+    LaunchedEffect(shouldOpenTracking) {
+        if (shouldOpenTracking) {
+            navController.navigate(Tab.Tracking.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            // 한 번만 이동한다. 소비하지 않으면 회전할 때마다 탭이 되돌아간다.
+            openTracking.value = false
+        }
+    }
 
     Scaffold(
         containerColor = Background,
@@ -68,7 +85,7 @@ fun FlightDealNavHost() {
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(Tab.Deals.route) { DealFeedScreen() }
-            composable(Tab.Tracking.route) { PlaceholderScreen() }
+            composable(Tab.Tracking.route) { TrackingScreen() }
             composable(Tab.Search.route) { PlaceholderScreen() }
             composable(Tab.Profile.route) { PlaceholderScreen() }
         }

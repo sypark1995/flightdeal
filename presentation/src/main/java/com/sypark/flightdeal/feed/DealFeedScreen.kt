@@ -1,5 +1,10 @@
 package com.sypark.flightdeal.feed
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,10 +22,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sypark.flightdeal.domain.model.TripType
@@ -37,6 +44,11 @@ fun DealFeedScreen(
     viewModel: DealFeedViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { /* 거절해도 추적 자체는 동작한다. 알림만 못 받는다. */ }
 
     Column(
         modifier = modifier
@@ -103,7 +115,22 @@ fun DealFeedScreen(
                             "/${it.quote.airline}/${it.quote.price.amount}"
                     },
                 ) { deal ->
-                    DealCard(item = deal, onClick = { /* 딥링크는 이후 계획서에서 */ })
+                    DealCard(
+                        item = deal,
+                        onClick = { /* 딥링크는 이후 계획서에서 */ },
+                        onTrack = {
+                            viewModel.track(deal)
+                            // 런타임 알림 권한은 API 33부터다. 그 아래에서 요청하면
+                            // 시스템이 모르는 권한이라 다이얼로그 없이 거부로 돌아온다.
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        },
+                    )
                 }
             }
 

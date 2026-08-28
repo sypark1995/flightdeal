@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.DealItem
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
+import com.sypark.flightdeal.domain.usecase.TrackRouteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -19,6 +21,7 @@ import javax.inject.Inject
 @HiltViewModel
 class DealFeedViewModel @Inject constructor(
     private val getDealFeed: GetDealFeedUseCase,
+    private val trackRoute: TrackRouteUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DealFeedUiState>(DealFeedUiState.Loading)
@@ -69,6 +72,19 @@ class DealFeedViewModel @Inject constructor(
                 // Repository 구현체가 AppResult 대신 예외를 던져도 앱이 죽어서는 안 된다.
                 Log.e(TAG, "특가 조회 중 예외 발생", e)
                 DealFeedUiState.Error(retryable = false)
+            }
+        }
+    }
+
+    /** 지금 화면이 보여주는 여정 종류로 등록한다. 화면과 다른 종류로 저장하면 이후 비교가 어긋난다. */
+    fun track(item: DealItem) {
+        viewModelScope.launch {
+            try {
+                trackRoute(item.quote, _tripType.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "추적 등록 실패", e)
             }
         }
     }
