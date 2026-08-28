@@ -32,11 +32,16 @@ fun DealCard(
     onTrack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 예약 링크가 없는 견적이 있다(API가 link를 안 주는 경우). 그런 카드를 누를 수 있게
+    // 두면 아무 반응이 없어서 사용자는 앱이 고장난 줄 안다 — 누를 수 없게 막고,
+    // 막혀 있다는 걸 누르기 전에 보여준다.
+    val hasBookingLink = item.quote.deepLink != null
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .border(1.dp, Outline, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .let { if (hasBookingLink) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 14.dp, vertical = 13.dp),
     ) {
         Text(
@@ -64,6 +69,9 @@ fun DealCard(
             }
             item.quote.airline?.let { airline ->
                 Text(text = airline, color = TextSecondary, fontSize = 11.sp)
+            }
+            if (!hasBookingLink) {
+                Text(text = "예약처 연결 없음", color = TextSecondary, fontSize = 11.sp)
             }
         }
 

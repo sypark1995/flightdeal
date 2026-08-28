@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sypark.flightdeal.booking.BookingLauncher
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.ui.theme.Background
 import com.sypark.flightdeal.ui.theme.Indigo
@@ -117,7 +118,11 @@ fun DealFeedScreen(
                 ) { deal ->
                     DealCard(
                         item = deal,
-                        onClick = { /* 딥링크는 이후 계획서에서 */ },
+                        // deepLink가 없는 견적도 있다. 그때는 DealCard가 자체적으로
+                        // 클릭을 막고 "예약처 연결 없음"을 보여주므로 여기선 있는 경우만 연다.
+                        onClick = {
+                            deal.quote.deepLink?.let { url -> BookingLauncher.open(context, url) }
+                        },
                         onTrack = {
                             viewModel.track(deal)
                             // 런타임 알림 권한은 API 33부터다. 그 아래에서 요청하면
