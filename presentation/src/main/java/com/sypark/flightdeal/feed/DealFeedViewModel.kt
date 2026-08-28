@@ -13,12 +13,13 @@ import com.sypark.flightdeal.domain.usecase.TrackRouteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -48,10 +49,24 @@ class DealFeedViewModel @Inject constructor(
 
     /**
      * 일회성 안내. `StateFlow`로 두면 화면 회전 때 같은 메시지가 다시 뜬다 —
-     * 마지막 값을 replay하기 때문이다. `Channel`은 한 번 받으면 사라진다.
+     * 마지막 값을 replay하기 때문이다.
+     *
+     * `Channel`은 쓰지 않는다. 이 ViewModel은 탭을 전환해도 살아남는데(NavHost가
+     * saveState/restoreState를 쓴다), `Channel`은 화면이 구독을 끊은 동안 보낸
+     * 메시지를 버리지 않고 버퍼에 쌓아뒀다가 사용자가 돌아와 다시 구독하는 순간
+     * 그대로 튀어나온다 — 몇 분 전에 실패한 새로고침 안내가 지금 막 일어난 일처럼
+     * 뜨는 식이다. `MutableSharedFlow(replay = 0, extraBufferCapacity = 1,
+     * onBufferOverflow = DROP_OLDEST)`는 구독자가 없으면(=화면이 안 보고 있으면)
+     * `tryEmit`이 그 메시지를 조용히 버린다. 일부러 그렇게 둔다 — 아무도 안 보고
+     * 있었다면 사용자가 돌아왔을 때 이미 낡은 메시지이므로, 뒤늦게 보여주는 것보다
+     * 버리는 쪽이 맞다.
      */
-    private val _messages = Channel<String>(Channel.BUFFERED)
-    val messages: Flow<String> = _messages.receiveAsFlow()
+    private val _messages = MutableSharedFlow<String>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     private var loadJob: Job? = null
 
@@ -115,7 +130,7 @@ class DealFeedViewModel @Inject constructor(
             when {
                 hadData && nextState is DealFeedUiState.Error -> {
                     revertTripType()
-                    _messages.send("가격을 새로 받아오지 못했어요")
+                    _messages.tryEmit("가격을 새로 받아오지 못했어요")
                 }
                 hadData && nextState is DealFeedUiState.Empty -> revertTripType()
                 else -> {
@@ -159,16 +174,28 @@ class DealFeedViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val registration = trackRoute(item.quote, item.quote.impliedTripType())
-                _messages.send(if (registration.isNew) "추적을 시작했어요" else "이미 추적 중이에요")
+                _messages.tryEmit(if (registration.isNew) "추적을 시작했어요" else "이미 추적 중이에요")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // 실패해도 로그에만 남기고 끝나면 사용자는 버튼을 누른 뒤 성공 여부를
                 // 영영 알 수 없다.
                 Log.e(TAG, "추적 등록 실패", e)
-                _messages.send("추적을 시작하지 못했어요")
+                _messages.tryEmit("추적을 시작하지 못했어요")
             }
         }
+    }
+
+    /**
+     * 예약 페이지를 열 브라우저가 기기에 없을 때 화면이 부른다.
+     *
+     * [BookingLauncher]는 Composable이 아니라 이 SharedFlow에 직접 emit할 수 없어
+     * 화면이 대신 호출해준다. 같은 [_messages]를 쓰므로 위 [track]의 안내와 동일하게
+     * 사용자가 화면을 안 보고 있으면 조용히 버려진다 — 예약 실패 안내는 지금 누른
+     * 결과이지, 나중에 돌아왔을 때 뜬금없이 뜰 이유가 없다.
+     */
+    fun bookingUnavailable() {
+        _messages.tryEmit("예약 페이지를 열 수 있는 앱이 없어요")
     }
 
     private companion object {

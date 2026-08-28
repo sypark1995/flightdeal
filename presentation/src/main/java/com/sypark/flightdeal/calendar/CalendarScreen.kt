@@ -16,9 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -33,7 +37,6 @@ import com.sypark.flightdeal.booking.BookingLauncher
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
-import java.time.LocalDate
 
 private val WEEKDAY_HEADERS = listOf("월", "화", "수", "목", "금", "토", "일")
 
@@ -53,164 +56,183 @@ fun CalendarScreen(
     // 그 안에서 FlightDealTheme.colors를 직접 못 읽으므로 미리 변수로 꺼내둔다.
     val indigo = FlightDealTheme.colors.indigo
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(FlightDealTheme.colors.background)
-            // 6주짜리 달은 그리드 6행 아래에 캡션 두 줄을 더할 자리가 늘 남지는 않는다.
-            // 스크롤이 없으면 그 경우 화면 아래로 넘친 부분이 소리 없이 잘려 안 보인다 —
-            // 캡션을 그리드 아래 붙이면서 실제로 그 잘림이 나타났다.
-            .verticalScroll(rememberScrollState()),
-    ) {
-        Text(
-            text = "날짜별 최저가",
-            color = FlightDealTheme.colors.textPrimary,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(16.dp),
-        )
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
 
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(FlightDealTheme.colors.background)
+                // 6주짜리 달은 그리드 6행 아래에 캡션 두 줄을 더할 자리가 늘 남지는 않는다.
+                // 스크롤이 없으면 그 경우 화면 아래로 넘친 부분이 소리 없이 잘려 안 보인다 —
+                // 캡션을 그리드 아래 붙이면서 실제로 그 잘림이 나타났다.
+                .verticalScroll(rememberScrollState()),
         ) {
-            items(items = Airport.DESTINATIONS, key = { it.iata }) { airport ->
-                DestinationChip(
-                    label = airport.cityKo,
-                    selected = airport == destination,
-                    onClick = { viewModel.selectDestination(airport) },
+            Text(
+                text = "날짜별 최저가",
+                color = FlightDealTheme.colors.textPrimary,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(16.dp),
+            )
+
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(items = Airport.DESTINATIONS, key = { it.iata }) { airport ->
+                    DestinationChip(
+                        label = airport.cityKo,
+                        selected = airport == destination,
+                        onClick = { viewModel.selectDestination(airport) },
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TripTypeChip(
+                    label = "왕복",
+                    selected = tripType == TripType.ROUND_TRIP,
+                    onClick = { viewModel.setTripType(TripType.ROUND_TRIP) },
+                )
+                TripTypeChip(
+                    label = "편도",
+                    selected = tripType == TripType.ONE_WAY,
+                    onClick = { viewModel.setTripType(TripType.ONE_WAY) },
                 )
             }
-        }
 
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TripTypeChip(
-                label = "왕복",
-                selected = tripType == TripType.ROUND_TRIP,
-                onClick = { viewModel.setTripType(TripType.ROUND_TRIP) },
-            )
-            TripTypeChip(
-                label = "편도",
-                selected = tripType == TripType.ONE_WAY,
-                onClick = { viewModel.setTripType(TripType.ONE_WAY) },
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "‹",
-                color = FlightDealTheme.colors.textPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    // 과거 달로는 못 간다. 눌러도 결과가 같으므로 누르기 전에 흐리게 보여준다.
-                    .alpha(if (canGoBack) 1f else 0.3f)
-                    .let { if (canGoBack) it.clickable { viewModel.previousMonth() } else it }
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-            )
-            Text(
-                text = "${month.year}년 ${month.monthValue}월",
-                color = FlightDealTheme.colors.textPrimary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "›",
-                color = FlightDealTheme.colors.textPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .clickable { viewModel.nextMonth() }
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-        ) {
-            WEEKDAY_HEADERS.forEach { day ->
-                Text(
-                    text = day,
-                    color = FlightDealTheme.colors.textSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        when (val current = state) {
-            CalendarUiState.Loading -> Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center,
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = "불러오는 중...", color = FlightDealTheme.colors.textSecondary, fontSize = 13.sp)
+                Text(
+                    text = "‹",
+                    color = FlightDealTheme.colors.textPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        // 과거 달로는 못 간다. 눌러도 결과가 같으므로 누르기 전에 흐리게 보여준다.
+                        .alpha(if (canGoBack) 1f else 0.3f)
+                        .let { if (canGoBack) it.clickable { viewModel.previousMonth() } else it }
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+                Text(
+                    text = "${month.year}년 ${month.monthValue}월",
+                    color = FlightDealTheme.colors.textPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "›",
+                    color = FlightDealTheme.colors.textPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable { viewModel.nextMonth() }
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                )
             }
 
-            is CalendarUiState.Success -> {
-                val calendar = current.calendar
-                val today = LocalDate.now()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            ) {
+                WEEKDAY_HEADERS.forEach { day ->
+                    Text(
+                        text = day,
+                        color = FlightDealTheme.colors.textSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
 
-                Column(
+            when (val current = state) {
+                CalendarUiState.Loading -> Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    MonthGrid.cellsOf(month).chunked(7).forEach { week ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            val median = calendar.median
-                            week.forEach { cell ->
-                                val quote = cell.date?.let { calendar.byDate[it] }
-                                DayCell(
-                                    cell = cell,
-                                    quote = quote,
-                                    isCheapest = cell.date != null && cell.date == calendar.cheapestDate,
-                                    isBelowMedian = quote != null && median != null &&
-                                        quote.price <= median,
-                                    today = today,
-                                    onClick = { picked ->
-                                        picked.deepLink?.let { url ->
-                                            BookingLauncher.open(context, url, indigo)
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                )
+                    Text(text = "불러오는 중...", color = FlightDealTheme.colors.textSecondary, fontSize = 13.sp)
+                }
+
+                is CalendarUiState.Success -> {
+                    val calendar = current.calendar
+                    // ViewModel이 주입받은 Clock에서 뽑는다 — 여기서 LocalDate.now()를
+                    // 직접 부르면 CalendarViewModel과 다른 시계를 보게 되고, 테스트에서도
+                    // 이 화면만 고정할 방법이 없다.
+                    val today = viewModel.today
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
+                    ) {
+                        MonthGrid.cellsOf(month).chunked(7).forEach { week ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                val median = calendar.median
+                                week.forEach { cell ->
+                                    val quote = cell.date?.let { calendar.byDate[it] }
+                                    DayCell(
+                                        cell = cell,
+                                        quote = quote,
+                                        isCheapest = cell.date != null && cell.date == calendar.cheapestDate,
+                                        isBelowMedian = quote != null && median != null &&
+                                            quote.price <= median,
+                                        today = today,
+                                        onClick = { picked ->
+                                            picked.deepLink?.let { url ->
+                                                if (!BookingLauncher.open(context, url, indigo)) {
+                                                    viewModel.bookingUnavailable()
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
                             }
                         }
                     }
+
+                    CalendarCaption(tripType = tripType)
                 }
 
-                CalendarCaption(tripType = tripType)
+                CalendarUiState.Empty -> CalendarMessage(
+                    title = "이 달은 가격 정보가 없어요",
+                    body = "다른 달이나 목적지를 골라보세요.",
+                    // 빈 데이터는 오류가 아니다. 다시 눌러도 결과가 같으므로 재시도 버튼을 두지 않는다.
+                    onRetry = null,
+                )
+
+                is CalendarUiState.Error -> CalendarMessage(
+                    title = "가격을 불러오지 못했어요",
+                    body = "네트워크를 확인하고 다시 시도해주세요.",
+                    onRetry = if (current.retryable) viewModel::refresh else null,
+                )
             }
-
-            CalendarUiState.Empty -> CalendarMessage(
-                title = "이 달은 가격 정보가 없어요",
-                body = "다른 달이나 목적지를 골라보세요.",
-                // 빈 데이터는 오류가 아니다. 다시 눌러도 결과가 같으므로 재시도 버튼을 두지 않는다.
-                onRetry = null,
-            )
-
-            is CalendarUiState.Error -> CalendarMessage(
-                title = "가격을 불러오지 못했어요",
-                body = "네트워크를 확인하고 다시 시도해주세요.",
-                onRetry = if (current.retryable) viewModel::refresh else null,
-            )
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 12.dp),
+        )
     }
 }
 
