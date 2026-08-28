@@ -545,9 +545,9 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): FlightDealDatabase =
         Room.databaseBuilder(context, FlightDealDatabase::class.java, "flightdeal.db")
-            // 외래키 CASCADE가 동작하려면 켜야 한다. 기본값은 꺼짐이다.
-            .setJournalMode(androidx.room.RoomDatabase.JournalMode.TRUNCATE)
             .build()
+
+    // Room은 외래키 강제를 기본으로 켠다. 따로 설정할 필요가 없다.
 
     @Provides
     fun provideTrackedRouteDao(db: FlightDealDatabase): TrackedRouteDao = db.trackedRouteDao()
@@ -694,11 +694,10 @@ class DaoTest {
 
 기대: PASS (7건).
 
-`추적을 해제하면 이력도 함께 사라진다`가 실패하면 외래키 강제가 꺼진 것이다.
-`Room.inMemoryDatabaseBuilder`는 기본으로 켜지 않는다 —
-`.setJournalMode(...)` 대신 테스트 빌더에 `.build()` 후
-`db.openHelper.writableDatabase.setForeignKeyConstraintsEnabled(true)`가 필요할 수 있다.
-**테스트를 지우지 말고 어떤 설정이 필요했는지 보고한다.**
+`추적을 해제하면 이력도 함께 사라진다`가 실패하면 외래키 강제가 걸리지 않은 것이다.
+Room은 기본으로 켜지만 인메모리 빌더에서 다르게 동작할 수 있다.
+**테스트를 지우거나 단언을 약화시키지 말고, 무엇이 필요했는지 보고한다** —
+CASCADE가 실제로 동작하지 않으면 추적을 해제해도 이력이 DB에 남아 계속 쌓인다.
 
 - [ ] **Step 7: 전체 테스트와 커밋**
 
