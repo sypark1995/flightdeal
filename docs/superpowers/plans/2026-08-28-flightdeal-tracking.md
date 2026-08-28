@@ -338,6 +338,8 @@ room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.14.1" }
+# ApplicationProvider는 room-testing에도 robolectric에도 전이로 딸려오지 않는다.
+androidx-test-core = { module = "androidx.test:core", version = "1.7.0" }
 ```
 
 `data/build.gradle.kts`의 `dependencies`:
@@ -349,6 +351,7 @@ robolectric = { module = "org.robolectric:robolectric", version = "4.14.1" }
 
     testImplementation(libs.room.testing)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 ```
 
 `android { }` 블록에 추가한다. Robolectric이 없으면 Room DAO를 JVM 테스트로 돌릴 수 없다.
