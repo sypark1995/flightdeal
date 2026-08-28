@@ -15,8 +15,10 @@ import org.junit.Test
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 class TravelpayoutsFlightPriceRepositoryTest {
@@ -25,7 +27,14 @@ class TravelpayoutsFlightPriceRepositoryTest {
     private lateinit var api: TravelpayoutsApi
     private lateinit var repository: TravelpayoutsFlightPriceRepository
 
-    private val clock = Clock.fixed(Instant.parse("2026-08-28T00:00:00Z"), ZoneOffset.UTC)
+    private var now: Instant = Instant.parse("2026-08-28T00:00:00Z")
+
+    /** 캐시 만료를 검증하려면 시간이 흘러야 한다. Clock.fixed로는 그 분기를 밟을 수 없다. */
+    private val clock = object : Clock() {
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId?): Clock = this
+        override fun instant(): Instant = now
+    }
     private val incheon = Airport("ICN", "서울", "대한민국")
     private val route = Route(incheon, Airport("TYO", "도쿄", "일본"))
 
@@ -213,6 +222,19 @@ class TravelpayoutsFlightPriceRepositoryTest {
             .cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
 
         assertTrue(result !is AppResult.Success)
+    }
+
+    @Test
+    fun `캐시가 만료되면 다시 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+        enqueueFixture("v3-ICN-TYO.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        now = now.plus(Duration.ofMinutes(6))
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+
+        // TTL은 5분이다. 6분 뒤에도 캐시를 쓰면 사용자가 낡은 가격을 보게 된다.
+        assertEquals(2, server.requestCount)
     }
 
     @Test
