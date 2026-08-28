@@ -101,12 +101,12 @@ class TravelpayoutsFlightPriceRepository(
         month: YearMonth,
         tripType: TripType,
     ): AppResult<List<PriceQuote>> = call {
-        fetch(route.origin.iata, route.destination.iata, month, tripType)
+        val quotes = fetch(route.origin.iata, route.destination.iata, month, tripType)
+        // 예약처 규칙을 달 전체에 먼저 적용한다. 날짜별로 적용하면 그날 행이 하나뿐일 때
+        // 폴백이 매번 걸려, 딜 피드라면 절대 보여주지 않을 CIS 예약처가 달력에는 뜬다.
+        GatePolicy.prioritize(quotes, { it.gate }, minCount = 1)
             .groupBy { it.quote.departDate }
-            .mapNotNull { (_, quotes) ->
-                // 딜 피드·추적과 같은 규칙이다. 여기서 갈리면 화면마다 값이 달라진다.
-                GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()?.quote
-            }
+            .mapNotNull { (_, sameDay) -> sameDay.minByOrNull { it.quote.price.amount }?.quote }
             .sortedBy { it.departDate }
     }
 
