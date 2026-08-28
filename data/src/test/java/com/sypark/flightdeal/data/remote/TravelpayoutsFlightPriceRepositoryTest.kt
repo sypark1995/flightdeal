@@ -22,6 +22,7 @@ import java.time.ZoneOffset
 class TravelpayoutsFlightPriceRepositoryTest {
 
     private lateinit var server: MockWebServer
+    private lateinit var api: TravelpayoutsApi
     private lateinit var repository: TravelpayoutsFlightPriceRepository
 
     private val clock = Clock.fixed(Instant.parse("2026-08-28T00:00:00Z"), ZoneOffset.UTC)
@@ -31,7 +32,7 @@ class TravelpayoutsFlightPriceRepositoryTest {
     @Before
     fun setUp() {
         server = MockWebServer().also { it.start() }
-        val api = Retrofit.Builder()
+        api = Retrofit.Builder()
             .baseUrl(server.url("/"))
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -44,6 +45,10 @@ class TravelpayoutsFlightPriceRepositoryTest {
 
     @After
     fun tearDown() = server.shutdown()
+
+    private fun twoDestinationRepository() = TravelpayoutsFlightPriceRepository(
+        api = api, marker = "123456", clock = clock, destinations = listOf("TYO", "BKK"),
+    )
 
     private fun enqueueFixture(name: String) {
         val body = javaClass.getResourceAsStream("/fixtures/$name")!!.readBytes().decodeToString()
@@ -175,6 +180,29 @@ class TravelpayoutsFlightPriceRepositoryTest {
 
         // 응답을 하나만 큐에 넣었다. 캐시가 없으면 두 번째 호출이 응답을 기다리다 실패한다.
         assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `목적지 하나가 실패해도 나머지는 보여준다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+        server.enqueue(MockResponse().setResponseCode(500))
+
+        val result = twoDestinationRepository()
+            .cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+
+        // 다섯 개가 멀쩡한데 하나 때문에 전체 화면이 오류가 되면 안 된다.
+        assertEquals(1, (result as AppResult.Success).data.size)
+    }
+
+    @Test
+    fun `목적지가 전부 실패하면 오류다`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(500))
+        server.enqueue(MockResponse().setResponseCode(500))
+
+        val result = twoDestinationRepository()
+            .cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+
+        assertTrue(result !is AppResult.Success)
     }
 
     @Test

@@ -51,9 +51,28 @@ class TravelpayoutsFlightPriceRepository(
         val month = YearMonth.now(clock).plusMonths(LEAD_MONTHS)
 
         coroutineScope {
-            destinations
-                .map { destination -> async { fetch(origin.iata, destination, month, tripType) } }
-                .awaitAll()
+            val outcomes = destinations.map { destination ->
+                async {
+                    try {
+                        Result.success(fetch(origin.iata, destination, month, tripType))
+                    } catch (e: CancellationException) {
+                        // 취소는 실패가 아니다. 삼키면 취소가 빈 결과로 둔갑한다.
+                        throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                }
+            }.awaitAll()
+
+            val succeeded = outcomes.mapNotNull { it.getOrNull() }
+
+            // 전부 실패했을 때만 오류다. 하나라도 건졌으면 그것만 보여준다 —
+            // 목적지 하나가 429를 맞았다고 나머지 다섯을 버릴 이유가 없다.
+            if (succeeded.isEmpty()) {
+                outcomes.firstNotNullOfOrNull { it.exceptionOrNull() }?.let { throw it }
+            }
+
+            succeeded
                 .mapNotNull { quotes ->
                     // 목적지마다 한 건만 고른다. 한국에서 예약 가능한 예약처를 우선하되,
                     // 그런 곳이 없으면 그 노선의 최저가라도 보여준다.
