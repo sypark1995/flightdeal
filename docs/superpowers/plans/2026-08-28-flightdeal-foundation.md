@@ -876,7 +876,12 @@ data class Airport(
     val iata: String,
     val cityKo: String,
     val countryKo: String,
-)
+) {
+    companion object {
+        /** 기본 출발지. 설정 화면이 생기면 DataStore에서 읽어온다. */
+        val INCHEON = Airport("ICN", "서울", "대한민국")
+    }
+}
 
 data class Route(
     val origin: Airport,
@@ -1288,7 +1293,7 @@ git commit -m "feat: 가격 변동 감지 로직 추가"
 - Produces:
   - `FlightPriceRepository` — `suspend cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>>`, `suspend calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>>`, `suspend priceStats(route: Route, month: YearMonth): AppResult<PriceStats>`
   - `FakeFlightPriceRepository(private val behavior: Behavior = Behavior.Normal)` — `Behavior`는 `Normal`, `EmptyData`, `Failing`
-  - `FakeDealFixtures.INCHEON`, `FakeDealFixtures.deals(): List<PriceQuote>`
+  - `FakeDealFixtures.deals(): List<PriceQuote>`, `FakeDealFixtures.monthlyPrices(route): List<PriceQuote>`
 
 **spec에서 벗어난 부분 — 의도적이다.** spec §6.1은 Fake가 "번들된 로컬 JSON"을 읽는다고
 썼지만, 여기서는 Kotlin 코드에 인메모리로 둔다. Fake의 JSON은 Travelpayouts 스키마도
@@ -1333,6 +1338,7 @@ interface FlightPriceRepository {
 ```kotlin
 package com.sypark.flightdeal.data.fake
 
+import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -1345,7 +1351,7 @@ class FakeFlightPriceRepositoryTest {
     fun `기본 동작은 특가 목록을 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
-        val result = repo.cheapestDeals(FakeDealFixtures.INCHEON, limit = 10)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10)
 
         assertTrue(result is AppResult.Success)
         assertTrue((result as AppResult.Success).data.isNotEmpty())
@@ -1355,7 +1361,7 @@ class FakeFlightPriceRepositoryTest {
     fun `limit보다 많이 돌려주지 않는다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
-        val result = repo.cheapestDeals(FakeDealFixtures.INCHEON, limit = 2)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 2)
 
         assertEquals(2, (result as AppResult.Success).data.size)
     }
@@ -1364,7 +1370,7 @@ class FakeFlightPriceRepositoryTest {
     fun `EmptyData 모드는 Empty를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.EmptyData)
 
-        val result = repo.cheapestDeals(FakeDealFixtures.INCHEON, limit = 10)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10)
 
         assertEquals(AppResult.Empty, result)
     }
@@ -1373,7 +1379,7 @@ class FakeFlightPriceRepositoryTest {
     fun `Failing 모드는 NetworkError를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.Failing)
 
-        val result = repo.cheapestDeals(FakeDealFixtures.INCHEON, limit = 10)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10)
 
         assertTrue(result is AppResult.NetworkError)
     }
@@ -1410,8 +1416,6 @@ import java.time.LocalDate
  */
 object FakeDealFixtures {
 
-    val INCHEON = Airport("ICN", "서울", "대한민국")
-
     private val DESTINATIONS = listOf(
         Airport("TYO", "도쿄", "일본") to 189_000,
         Airport("BKK", "방콕", "태국") to 241_000,
@@ -1425,7 +1429,7 @@ object FakeDealFixtures {
 
     fun deals(): List<PriceQuote> = DESTINATIONS.mapIndexed { index, (destination, price) ->
         PriceQuote(
-            route = Route(INCHEON, destination),
+            route = Route(Airport.INCHEON, destination),
             departDate = LocalDate.of(2026, 10, 12).plusDays(index.toLong()),
             returnDate = LocalDate.of(2026, 10, 16).plusDays(index.toLong()),
             price = Won(price),
@@ -1790,7 +1794,7 @@ git commit -m "feat: 특가 피드 조회 UseCase 추가"
 - Test: `presentation/src/test/java/com/sypark/flightdeal/feed/DealFeedViewModelTest.kt`
 
 **Interfaces:**
-- Consumes: `GetDealFeedUseCase` (Task 6), `FakeDealFixtures.INCHEON` (Task 5)
+- Consumes: `GetDealFeedUseCase` (Task 6), `Airport.INCHEON` (Task 3)
 - Produces:
   - `DealFeedUiState` — `Loading`, `Success(deals: List<DealItem>)`, `Empty`, `Error(retryable: Boolean)`
   - `DealFeedViewModel.uiState: StateFlow<DealFeedUiState>`, `DealFeedViewModel.refresh()`
@@ -1914,7 +1918,7 @@ package com.sypark.flightdeal.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.sypark.flightdeal.data.fake.FakeDealFixtures
+import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -1941,7 +1945,7 @@ class DealFeedViewModel @Inject constructor(
             _uiState.value = DealFeedUiState.Loading
 
             // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
-            _uiState.value = when (val result = getDealFeed(FakeDealFixtures.INCHEON)) {
+            _uiState.value = when (val result = getDealFeed(Airport.INCHEON)) {
                 is AppResult.Success -> DealFeedUiState.Success(result.data)
                 AppResult.Empty -> DealFeedUiState.Empty
                 is AppResult.NetworkError -> DealFeedUiState.Error(retryable = true)
@@ -1952,8 +1956,9 @@ class DealFeedViewModel @Inject constructor(
 }
 ```
 
-`FakeDealFixtures.INCHEON`을 `:presentation`이 직접 참조하는 것은 임시다.
-설정 화면이 생기면 DataStore에서 읽어오고, 이 import는 사라진다.
+출발지를 `Airport.INCHEON` 상수로 고정한 것은 임시다. 설정 화면이 생기면
+DataStore에서 읽어온다. 프로덕션 코드가 `:data`의 Fake 픽스처를 참조하지 않도록
+이 상수는 `:domain`에 둔다.
 
 - [ ] **Step 5: 테스트 통과 확인**
 
