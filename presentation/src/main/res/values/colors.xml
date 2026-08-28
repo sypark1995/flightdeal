@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 브랜드 -->
+    <color name="indigo">#4338E0</color>
+    <color name="indigo_subtle">#EDEBFF</color>
+
+    <!-- 표면 -->
+    <color name="background">#FFFFFF</color>
+    <color name="surface">#F4F5F9</color>
+    <color name="outline">#EAECF3</color>
+
+    <!-- 텍스트 -->
+    <color name="text_primary">#0F1115</color>
+    <color name="text_secondary">#8A8FA3</color>
+
+    <!-- 가격 방향. 브랜드 색과 절대 섞지 않는다. -->
+    <color name="price_down">#0E9E6E</color>
+    <color name="price_up">#D93A3A</color>
+
+    <color name="white">#FFFFFF</color>
+</resources>

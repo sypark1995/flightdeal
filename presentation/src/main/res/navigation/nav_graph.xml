@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/dealFeedFragment">
+
+    <fragment
+        android:id="@+id/dealFeedFragment"
+        android:name="com.sypark.flightdeal.feed.DealFeedFragment"
+        android:label="@string/tab_deals" />
+
+    <fragment
+        android:id="@+id/trackingFragment"
+        android:name="com.sypark.flightdeal.placeholder.TrackingFragment"
+        android:label="@string/tab_tracking" />
+
+    <fragment
+        android:id="@+id/searchFragment"
+        android:name="com.sypark.flightdeal.placeholder.SearchFragment"
+        android:label="@string/tab_search" />
+
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.sypark.flightdeal.placeholder.ProfileFragment"
+        android:label="@string/tab_profile" />
+</navigation>
