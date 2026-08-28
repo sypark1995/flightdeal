@@ -70,6 +70,15 @@ fun DealCard(
             item.quote.airline?.let { airline ->
                 Text(text = airline, color = TextSecondary, fontSize = 11.sp)
             }
+            itineraryLabel(item.quote.transfers, item.quote.outboundMinutes)?.let { label ->
+                Text(
+                    text = label,
+                    // 경유는 오류가 아니라 정보지만, 직항보다는 눈에 띄어야 예약 페이지에서
+                    // 놀라지 않는다. PriceUp(빨강)은 가격 상승 전용이라 쓰지 않는다.
+                    color = if ((item.quote.transfers ?: 0) > 0) TextPrimary else TextSecondary,
+                    fontSize = 11.sp,
+                )
+            }
             if (!hasBookingLink) {
                 Text(text = "예약처 연결 없음", color = TextSecondary, fontSize = 11.sp)
             }

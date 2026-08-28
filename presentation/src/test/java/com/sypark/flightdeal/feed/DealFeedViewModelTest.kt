@@ -117,6 +117,8 @@ class DealFeedViewModelTest {
         airline = "대한항공",
         foundAt = Instant.EPOCH,
         deepLink = null,
+        transfers = null,
+        outboundMinutes = null,
     )
 
     /** 첫 호출만 느리게 만들고, 호출할 때마다 다른 가격을 돌려준다. */

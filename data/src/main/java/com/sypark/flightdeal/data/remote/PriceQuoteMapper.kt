@@ -32,6 +32,8 @@ object PriceQuoteMapper {
             airline = AirlineNames.of(dto.airline),
             foundAt = foundAt,
             deepLink = DeepLinkBuilder.build(dto.link, marker),
+            transfers = transfersOf(dto),
+            outboundMinutes = dto.durationTo,
         )
     }
 
@@ -39,5 +41,22 @@ object PriceQuoteMapper {
     private fun parseDate(raw: String?): LocalDate? {
         if (raw == null || raw.length < 10) return null
         return runCatching { LocalDate.parse(raw.substring(0, 10)) }.getOrNull()
+    }
+
+    /**
+     * 가는 편과 오는 편 중 경유가 많은 쪽을 고른다. 편도(return_at 없음)면
+     * return_transfers는 의미가 없으므로 보지 않는다.
+     */
+    private fun transfersOf(dto: PriceDto): Int? {
+        val outbound = dto.transfers
+        if (dto.returnAt == null) return outbound
+
+        val inbound = dto.returnTransfers
+        return when {
+            outbound == null && inbound == null -> null
+            outbound == null -> inbound
+            inbound == null -> outbound
+            else -> maxOf(outbound, inbound)
+        }
     }
 }

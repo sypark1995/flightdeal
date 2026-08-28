@@ -54,6 +54,8 @@ class CalendarViewModelTest {
             airline = "대한항공",
             foundAt = Instant.EPOCH,
             deepLink = "https://example.com/booking/${destination.iata}/$day",
+            transfers = null,
+            outboundMinutes = null,
         )
 
     /** 목적지별로 다른 값을 돌려주고, 호출 횟수를 센다. */
