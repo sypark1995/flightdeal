@@ -116,6 +116,33 @@ class TrackingViewModelTest {
     }
 
     @Test
+    fun `새 가격이 저장되면 화면이 바로 갱신된다`() = runTest {
+        val snapshots = MutableStateFlow(listOf(snapshot(300_000, 100)))
+        val history = object : PriceHistoryRepository {
+            override suspend fun append(snapshot: PriceSnapshot) = Unit
+            override suspend fun latest(trackedRouteId: Long): PriceSnapshot? = null
+            override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
+                snapshots
+            override suspend fun pruneOlderThan(days: Int) = Unit
+        }
+
+        viewModel(FakeRoutes(listOf(tracked())), history).uiState.test {
+            awaitItem()
+            assertEquals(
+                Won(300_000),
+                (awaitItem() as TrackingUiState.Success).items.single().latest!!.price,
+            )
+
+            // 워커가 새 가격을 저장한 상황. 탭을 나갔다 오지 않아도 보여야 한다.
+            snapshots.value = listOf(snapshot(300_000, 100), snapshot(280_000, 200))
+
+            val updated = (awaitItem() as TrackingUiState.Success).items.single()
+            assertEquals(Won(280_000), updated.latest!!.price)
+            assertEquals(Won(300_000), updated.previous!!.price)
+        }
+    }
+
+    @Test
     fun `해제하면 목록에서 빠진다`() = runTest {
         val routes = FakeRoutes(listOf(tracked()))
         val vm = viewModel(routes, FakeHistory(listOf(snapshot(300_000, 100))))

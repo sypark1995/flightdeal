@@ -13,8 +13,10 @@ interface PriceSnapshotDao {
     suspend fun insert(entity: PriceSnapshotEntity)
 
     @Query(
+        // latestFor와 같은 이유로 id 타이브레이크를 둔다. 같은 초에 들어간 두 행의
+        // 순서가 뒤집히면 어느 쪽이 최신인지가 바뀌어 화살표와 색이 반대로 뜬다.
         "SELECT * FROM price_snapshot WHERE trackedRouteId = :trackedRouteId " +
-            "AND capturedAt >= :sinceEpochSecond ORDER BY capturedAt ASC"
+            "AND capturedAt >= :sinceEpochSecond ORDER BY capturedAt ASC, id ASC"
     )
     fun observeFor(trackedRouteId: Long, sinceEpochSecond: Long): Flow<List<PriceSnapshotEntity>>
 
