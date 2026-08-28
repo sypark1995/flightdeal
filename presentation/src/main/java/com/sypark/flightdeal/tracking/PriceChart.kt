@@ -30,10 +30,12 @@ import com.sypark.flightdeal.ui.theme.FlightDealTheme
 fun PriceChart(
     snapshots: List<PriceSnapshot>,
     targetPrice: Won?,
+    hasDeparted: Boolean,
     modifier: Modifier = Modifier,
 ) {
     // 점이 둘 미만이면 선을 그을 수 없다 — 하나로 선을 그으면 아무것도 안 그려지거나
-    // 빈 상자만 남는다. 대신 언제 그래프가 채워질지 안내한다.
+    // 빈 상자만 남는다. 지난 여정이 아니면 언제 채워질지 안내하고, 지난 여정이면
+    // 더는 조회하지 않으니 "곧 채워진다"는 약속 대신 그 사실을 그대로 말한다.
     if (snapshots.size < 2) {
         Box(
             modifier = modifier
@@ -42,7 +44,11 @@ fun PriceChart(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "가격을 두 번 이상 확인하면 추이를 보여드릴게요",
+                text = if (hasDeparted) {
+                    "지난 여정이라 가격 추이를 보여드릴 수 없어요"
+                } else {
+                    "가격을 두 번 이상 확인하면 추이를 보여드릴게요"
+                },
                 color = FlightDealTheme.colors.textSecondary,
                 fontSize = 12.sp,
             )

@@ -210,4 +210,24 @@ class CalendarViewModelTest {
         assertEquals(YearMonth.of(2026, 9), viewModel.month.value)
         assertEquals(before + 1, repo.calls)
     }
+
+    @Test
+    fun `오늘은 주입된 시계를 따른다`() = runTest {
+        // LocalDate.now()를 화면이 직접 부르면 이 ViewModel과 다른 시계를 보게 될 수
+        // 있다 — today는 반드시 생성자로 받은 clock에서 나와야 한다.
+        val viewModel = viewModel(CountingRepository())
+
+        assertEquals(LocalDate.of(2026, 8, 29), viewModel.today)
+    }
+
+    @Test
+    fun `예약 페이지를 열 수 없으면 안내 메시지를 보낸다`() = runTest {
+        val viewModel = viewModel(CountingRepository())
+
+        viewModel.messages.test {
+            viewModel.bookingUnavailable()
+
+            assertEquals("예약 페이지를 열 수 있는 앱이 없어요", awaitItem())
+        }
+    }
 }

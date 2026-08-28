@@ -699,4 +699,39 @@ class DealFeedViewModelTest {
 
         assertEquals(TripType.ONE_WAY, viewModel.tripType.value)
     }
+
+    @Test
+    fun `아무도 화면을 보고 있지 않을 때 보낸 메시지는 나중에 구독해도 다시 나타나지 않는다`() = runTest {
+        // 리뷰가 지적한 실제 결함: Channel(BUFFERED)는 구독자가 없어도 메시지를
+        // 버퍼에 쌓아뒀다가, 나중에 새로 구독하는 순간(탭을 떠났다 돌아오는 것과
+        // 같다) 그 오래된 메시지를 그대로 내보낸다. 위 "회전 뒤" 테스트와 다르게,
+        // 여기서는 메시지를 보내는 시점에 구독자가 아예 없다는 게 핵심이다.
+        val routes = RecordingTrackedRoutes().apply { isNew = true }
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(FakeFlightPriceRepository(), CalculateDiscountUseCase()),
+            trackRoute = TrackRouteUseCase(routes, NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        // 아무도 messages를 구독하지 않은 채로 메시지를 보낸다.
+        viewModel.track(deal)
+        advanceUntilIdle()
+
+        // 이제서야 구독한다 — 탭을 갔다가 돌아온 상황을 흉내낸다. 아무것도 안 보여야 한다.
+        viewModel.messages.test {
+            expectNoEvents()
+        }
+    }
+
+    @Test
+    fun `예약 페이지를 열 수 없으면 안내 메시지를 보낸다`() = runTest {
+        val viewModel = viewModel(FakeFlightPriceRepository.Behavior.Normal)
+
+        viewModel.messages.test {
+            viewModel.bookingUnavailable()
+
+            assertEquals("예약 페이지를 열 수 있는 앱이 없어요", awaitItem())
+        }
+    }
 }

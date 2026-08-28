@@ -1,7 +1,5 @@
 package com.sypark.flightdeal.worker
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -31,7 +29,7 @@ class PriceChangeNotifier @Inject constructor(
     fun notify(changes: List<PriceChange>, routes: List<TrackedRoute>): List<PriceChange> {
         if (changes.isEmpty()) return emptyList()
 
-        ensureChannel()
+        NotificationStatus.ensureChannel(context)
         if (!NotificationStatus.isAllowed(context)) return emptyList()
 
         val byId = routes.associateBy { it.id }
@@ -69,17 +67,6 @@ class PriceChangeNotifier @Inject constructor(
 
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
         return shown
-    }
-
-    /**
-     * 알림 가능 여부 판정은 [NotificationStatus]로 뽑았다 — 내정보 화면도 같은 함수를
-     * 부른다. 화면과 워커가 각자 판정하면 둘이 어긋날 수 있다.
-     */
-    private fun ensureChannel() {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(NotificationStatus.CHANNEL_ID, "가격 변동", NotificationManager.IMPORTANCE_DEFAULT)
-        )
     }
 
     private companion object {

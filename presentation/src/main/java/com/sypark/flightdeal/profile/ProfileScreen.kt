@@ -199,7 +199,12 @@ fun ProfileScreen(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable {
-                        BookingLauncher.open(context, "https://www.aviasales.com", indigo)
+                        if (!BookingLauncher.open(context, "https://www.aviasales.com", indigo)) {
+                            // 이 화면은 알림 설정 실패도 같은 방식(화면에 붙은 코루틴 스코프 +
+                            // 로컬 SnackbarHostState)으로 알린다. ViewModel에 없는 메시지
+                            // 채널을 이 하나 때문에 새로 만들지 않는다.
+                            scope.launch { snackbarHostState.showSnackbar("예약 페이지를 열 수 있는 앱이 없어요") }
+                        }
                     },
                 )
                 Text(
@@ -255,11 +260,15 @@ private fun ProfileSection(
 
 /**
  * `Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS`는 API 26부터 있지만, 채널이 아직
- * 만들어지지 않은 상태(알림을 한 번도 안 보낸 새 설치)에서는 열리지 않을 수 있다.
+ * 없는 상태(알림을 한 번도 안 보낸 새 설치)에서 열면 예외 없이 그냥 빈 화면이 열렸다가
+ * 바로 끝난다 — 그래서 여는 시도 전에 [NotificationStatus.ensureChannel]로 채널부터
+ * 만들어둔다. 아래 `ActivityNotFoundException` 처리는 이 경우를 잡지 못한다: 그건
+ * 이 기기에 해당 액션을 처리할 Settings 액티비티 자체가 없는, 더 드문 경우를 잡는다.
  * 앱 알림 설정으로, 그것도 안 되면 앱 상세 설정으로 물러선다. 셋 다 실패하면
  * 조용히 아무 일도 없으면 안 되므로 [onAllFailed]로 알린다.
  */
 private fun openNotificationSettings(context: android.content.Context, onAllFailed: () -> Unit) {
+    NotificationStatus.ensureChannel(context)
     val candidates = listOf(
         Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)

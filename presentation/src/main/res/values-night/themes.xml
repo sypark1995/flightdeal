@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 부모를 다크 프레임워크 테마로 둔다 — 우리가 여기서 안 채운 시스템 기본값
+         (다이얼로그, 텍스트 선택 핸들 등)도 다크에 맞게 따라오게 하려는 목적이다.
+         windowBackground는 Compose의 DarkPalette.background와 맞춘다. -->
+    <style name="Theme.FlightDeal" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:colorBackground">@color/window_background</item>
+    </style>
+</resources>

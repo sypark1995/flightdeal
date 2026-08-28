@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Color.kt의 LightPalette.background와 반드시 같은 값이어야 한다. 여기가 어긋나면
+         콜드 스타트/시스템 다크-라이트 전환 때 윈도우 배경(그리고 API 31+ 스플래시)이
+         Compose가 첫 프레임을 그리기 전까지 다른 색으로 잠깐 보인다. -->
+    <color name="window_background">#FFFFFFFF</color>
+</resources>

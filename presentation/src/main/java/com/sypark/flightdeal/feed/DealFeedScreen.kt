@@ -145,7 +145,9 @@ fun DealFeedScreen(
                             // 클릭을 막고 "예약처 연결 없음"을 보여주므로 여기선 있는 경우만 연다.
                             onClick = {
                                 deal.quote.deepLink?.let { url ->
-                                    BookingLauncher.open(context, url, indigo)
+                                    if (!BookingLauncher.open(context, url, indigo)) {
+                                        viewModel.bookingUnavailable()
+                                    }
                                 }
                             },
                             onTrack = {

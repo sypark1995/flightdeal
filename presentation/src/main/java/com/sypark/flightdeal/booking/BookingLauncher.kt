@@ -24,8 +24,13 @@ object BookingLauncher {
      * [BookingLauncher]는 Composable이 아니라 팔레트(CompositionLocal)를 직접
      * 읽을 수 없다. 툴바 색은 호출하는 화면이 `FlightDealTheme.colors.indigo`를
      * 읽어 넘긴다 — 그래야 다크 모드에서 툴바만 밝은 보라로 튀지 않는다.
+     *
+     * @return 예약 페이지를 실제로 열었으면 true. Custom Tabs도, 일반 브라우저도 없어
+     *   아무것도 못 열었으면 false — 호출부가 이 값을 보고 사용자에게 알려야 한다.
+     *   이 앱의 목적 자체가 예약처로 보내는 것이라, 조용히 실패하면 사용자는 누른 게
+     *   맞는지도 알 수 없다.
      */
-    fun open(context: Context, url: String, toolbarColor: ComposeColor) {
+    fun open(context: Context, url: String, toolbarColor: ComposeColor): Boolean {
         val colorSchemeParams = CustomTabColorSchemeParams.Builder()
             .setToolbarColor(toolbarColor.toArgb())
             .build()
@@ -36,13 +41,15 @@ object BookingLauncher {
             .setDefaultColorSchemeParams(colorSchemeParams)
             .build()
 
-        try {
+        return try {
             intent.launchUrl(context, Uri.parse(url))
+            true
         } catch (e: ActivityNotFoundException) {
             // Custom Tabs를 지원하는 브라우저가 없는 기기가 있다. 그때는 아무 브라우저나 쓴다.
             // 여기서 막히면 사용자는 찾은 항공권을 예약할 방법이 없다.
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 .onFailure { Log.w(TAG, "예약 페이지를 열 수 있는 앱이 없다", it) }
+                .isSuccess
         }
     }
 }

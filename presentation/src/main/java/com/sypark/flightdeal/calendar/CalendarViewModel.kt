@@ -11,14 +11,19 @@ import com.sypark.flightdeal.domain.usecase.GetMonthCalendarUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Clock
+import java.time.LocalDate
 import java.time.YearMonth
 import javax.inject.Inject
 
@@ -50,6 +55,26 @@ class CalendarViewModel @Inject constructor(
     val canGoToPreviousMonth: StateFlow<Boolean> = _month
         .map { it > YearMonth.now(clock) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * 오늘 날짜. `LocalDate.now()`를 화면이 직접 부르면 테스트에서 고정할 수 없고,
+     * 이 ViewModel이 이미 주입받은 [clock]과도 어긋난다 — 과거로 다이얼을 돌린 테스트
+     * 시계를 화면만 못 보는 상태가 된다.
+     */
+    val today: LocalDate = LocalDate.now(clock)
+
+    /**
+     * 일회성 안내. [com.sypark.flightdeal.feed.DealFeedViewModel.messages]와 같은
+     * 이유로 `Channel` 대신 `MutableSharedFlow`를 쓴다 — 구독자가 없을 때(화면이 이
+     * 탭에 없을 때) `tryEmit`은 메시지를 버퍼에 쌓지 않고 조용히 버린다. 예약 실패
+     * 안내는 지금 누른 결과를 알리는 것이지, 나중에 돌아왔을 때 뒤늦게 뜰 이유가 없다.
+     */
+    private val _messages = MutableSharedFlow<String>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     private var loadJob: Job? = null
 
@@ -116,6 +141,11 @@ class CalendarViewModel @Inject constructor(
                 CalendarUiState.Error(retryable = false)
             }
         }
+    }
+
+    /** 예약 페이지를 열 브라우저가 기기에 없을 때 화면이 부른다. [DealFeedViewModel.bookingUnavailable]과 같은 이유. */
+    fun bookingUnavailable() {
+        _messages.tryEmit("예약 페이지를 열 수 있는 앱이 없어요")
     }
 
     private companion object {
