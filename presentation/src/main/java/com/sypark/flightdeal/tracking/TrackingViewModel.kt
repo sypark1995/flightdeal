@@ -65,6 +65,9 @@ class TrackingViewModel @Inject constructor(
                 tracked = this,
                 latest = latest,
                 previous = recent.dropLast(1).lastOrNull { it.price != latest?.price },
+                // 그래프는 마지막 두 점이 아니라 이미 가져온 전체 이력을 그대로 쓴다.
+                // 조회를 새로 추가하면 같은 데이터를 두 번 읽게 된다.
+                history = recent,
             )
         }
 }

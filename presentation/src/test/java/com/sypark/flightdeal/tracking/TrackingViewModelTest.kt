@@ -141,6 +141,25 @@ class TrackingViewModelTest {
     }
 
     @Test
+    fun `카드에 전체 이력이 실린다`() = runTest {
+        // 그래프는 마지막 두 점이 아니라 그동안 모은 전부를 그린다.
+        val history = FakeHistory(
+            listOf(
+                snapshot(300_000, 100),
+                snapshot(250_000, 200),
+                snapshot(250_000, 300),
+            )
+        )
+
+        viewModel(FakeRoutes(listOf(tracked())), history).uiState.test {
+            awaitItem()
+            val item = (awaitItem() as TrackingUiState.Success).items.single()
+
+            assertEquals(listOf(Won(300_000), Won(250_000), Won(250_000)), item.history.map { it.price })
+        }
+    }
+
+    @Test
     fun `새 가격이 저장되면 화면이 바로 갱신된다`() = runTest {
         val snapshots = MutableStateFlow(listOf(snapshot(300_000, 100)))
         val history = object : PriceHistoryRepository {
