@@ -1451,15 +1451,18 @@ object FakeDealFixtures {
     fun monthlyPrices(route: Route, month: YearMonth): List<PriceQuote> {
         val base = DESTINATIONS.firstOrNull { it.first.iata == route.destination.iata }?.second
             ?: return emptyList()
+        val seed = route.destination.iata.sumOf { it.code }
         return (1..month.lengthOfMonth()).map { day ->
             val departDate = month.atDay(day)
             PriceQuote(
                 route = route,
                 departDate = departDate,
                 returnDate = departDate.plusDays(4),
-                // 특가(base)의 1.2배 ~ 1.9배 사이에서 흔들리게 만든다. 중앙값은 약 1.53배가 되어
-                // 특가에 35% 안팎의 할인 배지가 붙는다.
-                price = Won(base * (120 + (day * 27) % 70) / 100),
+                // 특가(base)의 1.10배 ~ 1.89배 사이에서 흔들리게 만든다.
+                // 노선 코드로 위상을 어긋나게 해야 목적지마다 할인율이 달라진다.
+                // day에만 의존시키면 base 대비 중앙값 비율이 모든 노선에서 같아져
+                // 화면의 배지가 전부 똑같은 퍼센트로 찍힌다.
+                price = Won(base * (110 + (day * 27 + seed) % 80) / 100),
                 airline = AIRLINES[day % AIRLINES.size],
                 foundAt = Instant.parse("2026-08-28T00:00:00Z"),
                 deepLink = "https://example.com/booking/${route.destination.iata}/$day",
@@ -2084,658 +2087,468 @@ git commit -m "feat: 특가 피드 ViewModel과 화면 상태 정의 추가"
 
 ---
 
-## Task 8: 인디고 테마와 특가 피드 화면
+## Task 8: Compose 테마와 특가 피드 화면
 
 **Files:**
-- Create: `presentation/src/main/res/values/colors.xml`
-- Create: `presentation/src/main/res/values/themes.xml`
-- Create: `presentation/src/main/res/values/dimens.xml`
-- Create: `presentation/src/main/res/drawable/bg_discount_badge.xml`
-- Create: `presentation/src/main/res/drawable/bg_card.xml`
-- Create: `presentation/src/main/res/menu/bottom_nav_menu.xml`
-- Create: `presentation/src/main/res/navigation/nav_graph.xml`
-- Create: `presentation/src/main/res/layout/activity_main.xml`
-- Create: `presentation/src/main/res/layout/fragment_deal_feed.xml`
-- Create: `presentation/src/main/res/layout/item_deal.xml`
-- Create: `presentation/src/main/java/com/sypark/flightdeal/MainActivity.kt`
-- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedFragment.kt`
-- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/DealAdapter.kt`
-- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/DealBindingAdapters.kt`
-- Create: 나머지 3개 탭의 자리표시 Fragment
+- Modify: `gradle/libs.versions.toml`
+- Modify: `presentation/build.gradle.kts`
 - Modify: `presentation/src/main/AndroidManifest.xml`
-- Modify: `presentation/src/main/res/values/strings.xml`
-- Test: `presentation/src/test/java/com/sypark/flightdeal/feed/DealDiffCallbackTest.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/ui/theme/Color.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/ui/theme/Theme.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/ui/FlightDealNavHost.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/ui/PlaceholderScreen.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/PriceFormat.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/DealCard.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedScreen.kt`
+- Modify: `presentation/src/main/java/com/sypark/flightdeal/MainActivity.kt`
+- Test: `presentation/src/test/java/com/sypark/flightdeal/feed/PriceFormatTest.kt`
+- **Delete:** `presentation/src/main/res/layout/`, `res/menu/`, `res/navigation/`, `res/drawable/`, `res/values/colors.xml`, `res/values/themes.xml`, `res/values/dimens.xml`, `feed/DealAdapter.kt`, `feed/DealBindingAdapters.kt`, `feed/DealXmlBindingAdapters.java`, `placeholder/PlaceholderFragments.kt`, `feed/DealFeedFragment.kt`, `test/.../DealDiffCallbackTest.kt`
 
 **Interfaces:**
-- Consumes: `DealFeedViewModel`, `DealFeedUiState` (Task 7), `DealItem` (Task 6)
-- Produces: 실행 가능한 앱. 4탭 BottomNav, 특가 피드 화면.
+- Consumes: `DealFeedViewModel` / `DealFeedUiState` (Task 7), `DealItem` (Task 6), `Won` (Task 3)
+- Produces: 실행 가능한 앱. Compose 4탭 하단 내비게이션, 특가 피드 화면.
+  - `fun formatWon(won: Won): String` — `"189,000원"`
+  - `@Composable fun DealCard(item: DealItem, onClick: () -> Unit, modifier: Modifier)`
+  - `@Composable fun DealFeedScreen(viewModel: DealFeedViewModel)`
 
-- [ ] **Step 1: 색상 리소스 작성**
+### 왜 XML DataBinding을 버리는가
 
-`presentation/src/main/res/values/colors.xml`:
+Task 8을 XML로 먼저 구현했을 때 세 가지가 한꺼번에 터졌고, 셋 다 원인이 같았다.
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 브랜드 -->
-    <color name="indigo">#4338E0</color>
-    <color name="indigo_subtle">#EDEBFF</color>
+1. Kotlin `@BindingAdapter` 함수를 DataBinding 컴파일러가 아예 발견하지 못한다. 바이트코드에
+   메서드와 어노테이션이 다 있는데도 `Cannot find a setter`가 난다. DataBinding이 번들한
+   `kotlinx-metadata-jvm`이 Kotlin 2.1(K2) 메타데이터를 못 읽는 것으로 보인다.
+2. `Won`이 `@JvmInline value class`라 JVM 게터 이름이 뒤섞인다(`getPrice-XXXXXXX`).
+   XML 표현식은 이 접근자를 해석하지 못하므로 `item.quote.price`를 쓸 수 없다.
+3. 우회하려면 Java 파일을 하나 둬야 한다.
 
-    <!-- 표면 -->
-    <color name="background">#FFFFFF</color>
-    <color name="surface">#F4F5F9</color>
-    <color name="outline">#EAECF3</color>
+Compose에서는 셋 다 존재하지 않는 문제다. 화면이 그냥 Kotlin 함수이므로 value class도,
+어노테이션 처리도, 접근자 이름 해석도 개입하지 않는다. **Java 소스를 두지 않는다.**
 
-    <!-- 텍스트 -->
-    <color name="text_primary">#0F1115</color>
-    <color name="text_secondary">#8A8FA3</color>
+`:domain`과 `:data`는 이 전환의 영향을 전혀 받지 않는다. `DealFeedViewModel`도 `StateFlow`를
+노출할 뿐이라 그대로 쓴다. 바뀌는 것은 `:presentation`의 뷰 계층뿐이다.
 
-    <!-- 가격 방향. 브랜드 색과 절대 섞지 않는다. -->
-    <color name="price_down">#0E9E6E</color>
-    <color name="price_up">#D93A3A</color>
+- [ ] **Step 1: Version Catalog에 Compose 추가, 뷰 스택 제거**
 
-    <color name="white">#FFFFFF</color>
-</resources>
+`gradle/libs.versions.toml`의 `[versions]`에 추가한다.
+
+```toml
+composeBom = "2025.06.00"
+activityCompose = "1.9.3"
+hiltNavigationCompose = "1.2.0"
 ```
 
-- [ ] **Step 2: 테마와 치수 작성**
+`[libraries]`에 추가한다.
 
-`presentation/src/main/res/values/themes.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.FlightDeal" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">@color/indigo</item>
-        <item name="colorOnPrimary">@color/white</item>
-        <item name="colorSurface">@color/background</item>
-        <item name="android:colorBackground">@color/background</item>
-        <item name="android:statusBarColor">@color/background</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
-    </style>
-</resources>
+```toml
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 ```
 
-`presentation/src/main/res/values/dimens.xml`:
+버전이 없는 항목들은 BOM이 정해준다. `[plugins]`에 추가한다.
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <dimen name="screen_margin">16dp</dimen>
-    <dimen name="card_radius">16dp</dimen>
-    <dimen name="card_gap">10dp</dimen>
-</resources>
+```toml
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ```
 
-- [ ] **Step 3: drawable 작성**
+Kotlin 2.x부터 Compose 컴파일러는 별도 버전이 아니라 Kotlin 플러그인과 같은 버전을 쓴다.
 
-`presentation/src/main/res/drawable/bg_discount_badge.xml`:
+**제거한다:** `glide`, `glide-ksp`, `shimmer` 라이브러리 항목과 `glide` 버전,
+`navigation-safeargs` 플러그인 항목. 더 이상 쓰지 않는다.
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/indigo_subtle" />
-    <corners android:radius="6dp" />
-</shape>
-```
+`build.gradle.kts` 루트에서도 `alias(libs.plugins.navigation.safeargs) apply false`를 지우고
+`alias(libs.plugins.kotlin.compose) apply false`를 추가한다.
 
-`presentation/src/main/res/drawable/bg_card.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/white" />
-    <stroke android:width="1dp" android:color="@color/outline" />
-    <corners android:radius="@dimen/card_radius" />
-</shape>
-```
-
-- [ ] **Step 4: 문자열 리소스 보강**
-
-`presentation/src/main/res/values/strings.xml`:
-
-```xml
-<resources>
-    <string name="app_name">flightdeal</string>
-
-    <string name="tab_deals">특가</string>
-    <string name="tab_tracking">추적</string>
-    <string name="tab_search">검색</string>
-    <string name="tab_profile">내정보</string>
-
-    <string name="feed_title">오늘의 특가</string>
-    <string name="feed_search_hint">어디로 떠나세요?</string>
-
-    <string name="feed_empty_title">아직 특가가 없어요</string>
-    <string name="feed_empty_body">가격 데이터가 모이면 여기에 보여드릴게요.</string>
-
-    <string name="feed_error_title">가격을 불러오지 못했어요</string>
-    <string name="feed_error_body">네트워크를 확인하고 다시 시도해주세요.</string>
-    <string name="retry">다시 시도</string>
-
-    <string name="discount_badge">평균가 %d%%</string>
-    <string name="price_won">%s원</string>
-    <string name="coming_soon">준비 중입니다</string>
-</resources>
-```
-
-`discount_badge`는 `평균가 −38%`처럼 보여야 하므로, 바인딩 어댑터에서 음수 부호를
-직접 붙인다(Step 8).
-
-- [ ] **Step 5: 자리표시 Fragment 3개 작성**
-
-`presentation/src/main/res/layout/fragment_placeholder.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/background">
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:text="@string/coming_soon"
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp" />
-</FrameLayout>
-```
-
-`presentation/src/main/java/com/sypark/flightdeal/placeholder/PlaceholderFragments.kt`:
+- [ ] **Step 2: `presentation/build.gradle.kts` 교체**
 
 ```kotlin
-package com.sypark.flightdeal.placeholder
+import java.util.Properties
 
-import androidx.fragment.app.Fragment
-import com.sypark.flightdeal.R
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
+}
 
-/**
- * 하단 탭 4개를 먼저 세워두기 위한 자리표시. 각 화면이 구현되면 교체한다.
- */
-class TrackingFragment : Fragment(R.layout.fragment_placeholder)
-class SearchFragment : Fragment(R.layout.fragment_placeholder)
-class ProfileFragment : Fragment(R.layout.fragment_placeholder)
-```
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
 
-- [ ] **Step 6: 하단 탭과 내비게이션 그래프 작성**
+android {
+    namespace = "com.sypark.flightdeal"
+    compileSdk = 36
 
-`presentation/src/main/res/menu/bottom_nav_menu.xml`:
+    defaultConfig {
+        applicationId = "com.sypark.flightdeal"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:id="@+id/dealFeedFragment" android:title="@string/tab_deals" />
-    <item android:id="@+id/trackingFragment" android:title="@string/tab_tracking" />
-    <item android:id="@+id/searchFragment" android:title="@string/tab_search" />
-    <item android:id="@+id/profileFragment" android:title="@string/tab_profile" />
-</menu>
-```
-
-아이콘은 아직 없다. Material3 BottomNavigationView는 아이콘 없이도 라벨만으로 렌더링된다.
-아이콘 추가는 이 계획서 범위 밖이다.
-
-`presentation/src/main/res/navigation/nav_graph.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<navigation xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/nav_graph"
-    app:startDestination="@id/dealFeedFragment">
-
-    <fragment
-        android:id="@+id/dealFeedFragment"
-        android:name="com.sypark.flightdeal.feed.DealFeedFragment"
-        android:label="@string/tab_deals" />
-
-    <fragment
-        android:id="@+id/trackingFragment"
-        android:name="com.sypark.flightdeal.placeholder.TrackingFragment"
-        android:label="@string/tab_tracking" />
-
-    <fragment
-        android:id="@+id/searchFragment"
-        android:name="com.sypark.flightdeal.placeholder.SearchFragment"
-        android:label="@string/tab_search" />
-
-    <fragment
-        android:id="@+id/profileFragment"
-        android:name="com.sypark.flightdeal.placeholder.ProfileFragment"
-        android:label="@string/tab_profile" />
-</navigation>
-```
-
-- [ ] **Step 7: MainActivity와 레이아웃 작성**
-
-`presentation/src/main/res/layout/activity_main.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/background">
-
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/navHost"
-        android:name="androidx.navigation.fragment.NavHostFragment"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:defaultNavHost="true"
-        app:navGraph="@navigation/nav_graph"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/bottomNav"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <com.google.android.material.bottomnavigation.BottomNavigationView
-        android:id="@+id/bottomNav"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@color/white"
-        app:labelVisibilityMode="labeled"
-        app:itemTextColor="@color/indigo"
-        app:menu="@menu/bottom_nav_menu"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-</androidx.constraintlayout.widget.ConstraintLayout>
-```
-
-`presentation/src/main/java/com/sypark/flightdeal/MainActivity.kt`:
-
-```kotlin
-package com.sypark.flightdeal
-
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import androidx.navigation.fragment.NavHostFragment
-import androidx.navigation.ui.setupWithNavController
-import com.sypark.flightdeal.databinding.ActivityMainBinding
-import dagger.hilt.android.AndroidEntryPoint
-
-@AndroidEntryPoint
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityMainBinding
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        val navController = (supportFragmentManager
-            .findFragmentById(R.id.navHost) as NavHostFragment).navController
-        binding.bottomNav.setupWithNavController(navController)
+        buildConfigField("String", "TRAVELPAYOUTS_TOKEN", "\"${localProps.getProperty("TRAVELPAYOUTS_TOKEN", "")}\"")
+        buildConfigField("String", "TRAVELPAYOUTS_MARKER", "\"${localProps.getProperty("TRAVELPAYOUTS_MARKER", "")}\"")
     }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+}
+
+dependencies {
+    implementation(project(":domain"))
+    implementation(project(":data"))
+
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.compose.material3)
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.hilt.android)
+    implementation(libs.hilt.navigation.compose)
+    ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 }
 ```
 
-`AndroidManifest.xml`을 수정해 `MainActivity`를 등록하고, Task 2 Step 9에서
-임시로 넣었던 테마를 되돌린다.
+`dataBinding`, `viewBinding`, `appcompat`, `material`, `constraintlayout`, `fragment-ktx`,
+`glide`, `shimmer`가 전부 빠진 것을 확인한다.
 
-```xml
-    <application
-        android:name=".FlightDealApp"
-        android:allowBackup="true"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.FlightDeal">
+- [ ] **Step 3: 색과 테마를 Kotlin으로**
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.FlightDeal">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
+`presentation/src/main/java/com/sypark/flightdeal/ui/theme/Color.kt`:
+
+```kotlin
+package com.sypark.flightdeal.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val Indigo = Color(0xFF4338E0)
+val IndigoSubtle = Color(0xFFEDEBFF)
+
+val Background = Color(0xFFFFFFFF)
+val Surface = Color(0xFFF4F5F9)
+val Outline = Color(0xFFEAECF3)
+
+val TextPrimary = Color(0xFF0F1115)
+val TextSecondary = Color(0xFF8A8FA3)
+
+/** 가격 방향. 브랜드 강조색과 절대 섞지 않는다. */
+val PriceDown = Color(0xFF0E9E6E)
+val PriceUp = Color(0xFFD93A3A)
 ```
 
-- [ ] **Step 8: 바인딩 어댑터 작성**
+`presentation/src/main/java/com/sypark/flightdeal/ui/theme/Theme.kt`:
 
-`presentation/src/main/java/com/sypark/flightdeal/feed/DealBindingAdapters.kt`:
+```kotlin
+package com.sypark.flightdeal.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+
+private val LightColors = lightColorScheme(
+    primary = Indigo,
+    onPrimary = Color.White,
+    primaryContainer = IndigoSubtle,
+    onPrimaryContainer = Indigo,
+    background = Background,
+    onBackground = TextPrimary,
+    surface = Background,
+    onSurface = TextPrimary,
+    surfaceVariant = Surface,
+    onSurfaceVariant = TextSecondary,
+    outline = Outline,
+    outlineVariant = Outline,
+)
+
+@Composable
+fun FlightDealTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
+```
+
+`androidx.compose.ui.graphics.Color` import를 잊지 않는다.
+
+- [ ] **Step 4: 원화 포맷 테스트 작성**
+
+`presentation/src/test/java/com/sypark/flightdeal/feed/PriceFormatTest.kt`:
 
 ```kotlin
 package com.sypark.flightdeal.feed
 
-import android.graphics.Paint
-import android.view.View
-import android.widget.TextView
-import androidx.databinding.BindingAdapter
-import com.sypark.flightdeal.R
+import com.sypark.flightdeal.domain.model.Won
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class PriceFormatTest {
+
+    @Test
+    fun `천 단위로 끊고 원을 붙인다`() {
+        assertEquals("189,000원", formatWon(Won(189_000)))
+    }
+
+    @Test
+    fun `천 원 미만도 원을 붙인다`() {
+        assertEquals("900원", formatWon(Won(900)))
+    }
+
+    @Test
+    fun `백만 단위도 끊는다`() {
+        assertEquals("1,250,000원", formatWon(Won(1_250_000)))
+    }
+}
+```
+
+- [ ] **Step 5: 테스트 실패 확인**
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew :presentation:testDebugUnitTest --tests "*PriceFormatTest*"
+```
+
+기대: 컴파일 실패. `Unresolved reference: formatWon`
+
+- [ ] **Step 6: 원화 포맷 구현**
+
+`presentation/src/main/java/com/sypark/flightdeal/feed/PriceFormat.kt`:
+
+```kotlin
+package com.sypark.flightdeal.feed
+
 import com.sypark.flightdeal.domain.model.Won
 import java.text.NumberFormat
 import java.util.Locale
 
 private val KRW: NumberFormat = NumberFormat.getIntegerInstance(Locale.KOREA)
 
-@BindingAdapter("wonPrice")
-fun TextView.setWonPrice(won: Won?) {
-    text = won?.let { context.getString(R.string.price_won, KRW.format(it.amount)) }.orEmpty()
-}
-
-/** 취소선 기준가. 값이 없으면 뷰 자체를 감춘다. */
-@BindingAdapter("strikethroughPrice")
-fun TextView.setStrikethroughPrice(won: Won?) {
-    if (won == null) {
-        visibility = View.GONE
-        return
-    }
-    visibility = View.VISIBLE
-    paintFlags = paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
-    text = context.getString(R.string.price_won, KRW.format(won.amount))
-}
-
-/** 할인 배지. 배지를 달 가치가 없으면 감춘다. */
-@BindingAdapter("discountPercent")
-fun TextView.setDiscountPercent(percent: Int?) {
-    if (percent == null) {
-        visibility = View.GONE
-        return
-    }
-    visibility = View.VISIBLE
-    // 화면에는 "평균가 −38%"로 보인다. 음수 부호는 U+2212.
-    text = context.getString(R.string.discount_badge, -percent)
-}
-
-@BindingAdapter("isVisible")
-fun View.setIsVisible(visible: Boolean) {
-    visibility = if (visible) View.VISIBLE else View.GONE
-}
-```
-
-- [ ] **Step 9: 딜 카드 레이아웃 작성**
-
-`presentation/src/main/res/layout/item_deal.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools">
-
-    <data>
-        <variable name="item" type="com.sypark.flightdeal.domain.model.DealItem" />
-    </data>
-
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="@dimen/card_gap"
-        android:background="@drawable/bg_card"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="13dp">
-
-        <TextView
-            android:id="@+id/city"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="@{item.quote.route.destination.cityKo}"
-            android:textColor="@color/text_primary"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            tools:text="도쿄" />
-
-        <TextView
-            android:id="@+id/badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/bg_discount_badge"
-            android:paddingHorizontal="7dp"
-            android:paddingVertical="3dp"
-            android:textColor="@color/indigo"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            app:discountPercent="@{item.discountPercent}"
-            app:layout_constraintTop_toBottomOf="@id/city"
-            app:layout_constraintStart_toStartOf="parent"
-            tools:text="평균가 −38%" />
-
-        <TextView
-            android:id="@+id/airline"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="7dp"
-            android:text="@{item.quote.airline}"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp"
-            app:layout_constraintTop_toTopOf="@id/badge"
-            app:layout_constraintBottom_toBottomOf="@id/badge"
-            app:layout_constraintStart_toEndOf="@id/badge"
-            tools:text="대한항공" />
-
-        <TextView
-            android:id="@+id/price"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="9dp"
-            android:textColor="@color/text_primary"
-            android:textSize="21sp"
-            android:textStyle="bold"
-            app:wonPrice="@{item.quote.price}"
-            app:layout_constraintTop_toBottomOf="@id/badge"
-            app:layout_constraintStart_toStartOf="parent"
-            tools:text="189,000원" />
-
-        <TextView
-            android:id="@+id/originalPrice"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp"
-            app:strikethroughPrice="@{item.originalPrice}"
-            app:layout_constraintBottom_toBottomOf="@id/price"
-            app:layout_constraintStart_toEndOf="@id/price"
-            tools:text="305,000원" />
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
-</layout>
-```
-
-- [ ] **Step 10: 어댑터 작성과 DiffUtil 테스트**
-
-`presentation/src/test/java/com/sypark/flightdeal/feed/DealDiffCallbackTest.kt`:
-
-```kotlin
-package com.sypark.flightdeal.feed
-
-import com.sypark.flightdeal.domain.model.Airport
-import com.sypark.flightdeal.domain.model.DealItem
-import com.sypark.flightdeal.domain.model.PriceQuote
-import com.sypark.flightdeal.domain.model.Route
-import com.sypark.flightdeal.domain.model.Won
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.time.Instant
-import java.time.LocalDate
-
-class DealDiffCallbackTest {
-
-    private fun item(destIata: String, price: Int) = DealItem(
-        quote = PriceQuote(
-            route = Route(Airport("ICN", "서울", "대한민국"), Airport(destIata, "도쿄", "일본")),
-            departDate = LocalDate.of(2026, 10, 12),
-            returnDate = null,
-            price = Won(price),
-            airline = "대한항공",
-            foundAt = Instant.EPOCH,
-            deepLink = null,
-        ),
-        discountPercent = null,
-        originalPrice = null,
-    )
-
-    @Test
-    fun `노선과 출발일이 같으면 같은 항목이다`() {
-        assertTrue(DealDiffCallback.areItemsTheSame(item("TYO", 189_000), item("TYO", 215_000)))
-    }
-
-    @Test
-    fun `목적지가 다르면 다른 항목이다`() {
-        assertFalse(DealDiffCallback.areItemsTheSame(item("TYO", 189_000), item("BKK", 189_000)))
-    }
-
-    @Test
-    fun `가격이 바뀌면 내용이 다르다`() {
-        assertFalse(DealDiffCallback.areContentsTheSame(item("TYO", 189_000), item("TYO", 215_000)))
-    }
-}
-```
-
-`presentation/src/main/java/com/sypark/flightdeal/feed/DealAdapter.kt`:
-
-```kotlin
-package com.sypark.flightdeal.feed
-
-import android.view.LayoutInflater
-import android.view.ViewGroup
-import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
-import com.sypark.flightdeal.databinding.ItemDealBinding
-import com.sypark.flightdeal.domain.model.DealItem
-
 /**
- * 테스트에서 직접 호출할 수 있도록 object로 분리한다.
+ * value class인 [Won]을 Compose에서는 그냥 함수로 받는다.
+ * XML 표현식과 달리 접근자 이름을 해석할 필요가 없다.
  */
-object DealDiffCallback : DiffUtil.ItemCallback<DealItem>() {
-
-    override fun areItemsTheSame(oldItem: DealItem, newItem: DealItem): Boolean =
-        oldItem.quote.route == newItem.quote.route &&
-            oldItem.quote.departDate == newItem.quote.departDate
-
-    override fun areContentsTheSame(oldItem: DealItem, newItem: DealItem): Boolean =
-        oldItem == newItem
-}
-
-class DealAdapter(
-    private val onClick: (DealItem) -> Unit,
-) : ListAdapter<DealItem, DealAdapter.ViewHolder>(DealDiffCallback) {
-
-    class ViewHolder(val binding: ItemDealBinding) : RecyclerView.ViewHolder(binding.root)
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
-        ViewHolder(ItemDealBinding.inflate(LayoutInflater.from(parent.context), parent, false))
-
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val item = getItem(position)
-        holder.binding.item = item
-        holder.binding.root.setOnClickListener { onClick(item) }
-        holder.binding.executePendingBindings()
-    }
-}
+fun formatWon(won: Won): String = "${KRW.format(won.amount)}원"
 ```
 
-- [ ] **Step 11: 피드 화면 레이아웃 작성**
+- [ ] **Step 7: 테스트 통과 확인**
 
-`presentation/src/main/res/layout/fragment_deal_feed.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools">
-
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@color/background">
-
-        <TextView
-            android:id="@+id/title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_margin="@dimen/screen_margin"
-            android:text="@string/feed_title"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintStart_toStartOf="parent" />
-
-        <TextView
-            android:id="@+id/searchBar"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="@dimen/screen_margin"
-            android:background="@drawable/bg_card"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="13dp"
-            android:text="@string/feed_search_hint"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            app:layout_constraintTop_toBottomOf="@id/title"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/dealList"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginTop="14dp"
-            android:clipToPadding="false"
-            android:paddingHorizontal="@dimen/screen_margin"
-            android:paddingBottom="@dimen/screen_margin"
-            app:layout_constraintTop_toBottomOf="@id/searchBar"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            tools:listitem="@layout/item_deal" />
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
-</layout>
+```bash
+./gradlew :presentation:testDebugUnitTest --tests "*PriceFormatTest*"
 ```
 
+기대: PASS (3건)
 
-- [ ] **Step 12: Fragment 작성**
+- [ ] **Step 8: 딜 카드 Composable 작성**
 
-`presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedFragment.kt`:
+`presentation/src/main/java/com/sypark/flightdeal/feed/DealCard.kt`:
 
 ```kotlin
 package com.sypark.flightdeal.feed
 
-import android.os.Bundle
-import android.view.View
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.viewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import com.sypark.flightdeal.R
-import com.sypark.flightdeal.databinding.FragmentDealFeedBinding
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.sypark.flightdeal.domain.model.DealItem
+import com.sypark.flightdeal.ui.theme.Indigo
+import com.sypark.flightdeal.ui.theme.IndigoSubtle
+import com.sypark.flightdeal.ui.theme.Outline
+import com.sypark.flightdeal.ui.theme.TextPrimary
+import com.sypark.flightdeal.ui.theme.TextSecondary
 
-@AndroidEntryPoint
-class DealFeedFragment : Fragment(R.layout.fragment_deal_feed) {
+@Composable
+fun DealCard(
+    item: DealItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, Outline, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+    ) {
+        Text(
+            text = item.quote.route.destination.cityKo,
+            color = TextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
 
-    private val viewModel: DealFeedViewModel by viewModels()
+        Row(
+            modifier = Modifier.padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            item.discountPercent?.let { percent ->
+                Text(
+                    text = "평균가 −$percent%",
+                    color = Indigo,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .background(IndigoSubtle, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                )
+            }
+            item.quote.airline?.let { airline ->
+                Text(text = airline, color = TextSecondary, fontSize = 11.sp)
+            }
+        }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        val binding = FragmentDealFeedBinding.bind(view)
+        Row(
+            modifier = Modifier.padding(top = 9.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = formatWon(item.quote.price),
+                color = TextPrimary,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            item.originalPrice?.let { original ->
+                Text(
+                    text = formatWon(original),
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    textDecoration = TextDecoration.LineThrough,
+                )
+            }
+        }
+    }
+}
+```
 
-        val adapter = DealAdapter { /* 딥링크 연결은 이후 계획서에서 */ }
-        binding.dealList.adapter = adapter
+`MaterialTheme` import가 쓰이지 않으면 지운다.
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { state ->
-                    if (state is DealFeedUiState.Success) adapter.submitList(state.deals)
+배지 문구의 `−`는 U+2212(마이너스 기호)다. 하이픈이 아니다.
+
+- [ ] **Step 9: 피드 화면 Composable 작성**
+
+`presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedScreen.kt`:
+
+```kotlin
+package com.sypark.flightdeal.feed
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Text
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sypark.flightdeal.ui.theme.Background
+import com.sypark.flightdeal.ui.theme.Outline
+import com.sypark.flightdeal.ui.theme.Surface
+import com.sypark.flightdeal.ui.theme.TextPrimary
+import com.sypark.flightdeal.ui.theme.TextSecondary
+
+@Composable
+fun DealFeedScreen(
+    modifier: Modifier = Modifier,
+    viewModel: DealFeedViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Background),
+    ) {
+        Text(
+            text = "오늘의 특가",
+            color = TextPrimary,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(16.dp),
+        )
+
+        Text(
+            text = "어디로 떠나세요?",
+            color = TextSecondary,
+            fontSize = 13.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .border(1.dp, Outline, RoundedCornerShape(16.dp))
+                .background(Surface, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+        )
+
+        // 로딩·빈 데이터·오류 상태는 Task 9에서 붙인다.
+        if (state is DealFeedUiState.Success) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+            ) {
+                items(
+                    items = (state as DealFeedUiState.Success).deals,
+                    key = { it.quote.route.destination.iata + it.quote.departDate },
+                ) { deal ->
+                    DealCard(item = deal, onClick = { /* 딥링크는 이후 계획서에서 */ })
                 }
             }
         }
@@ -2743,43 +2556,245 @@ class DealFeedFragment : Fragment(R.layout.fragment_deal_feed) {
 }
 ```
 
-로딩·빈·오류 상태 UI는 Task 9에서 붙인다. 여기서는 성공 경로만 그린다.
+`LazyColumn`의 `key`가 `DiffUtil`을 대신한다. 별도 어댑터도 콜백도 필요 없다.
+
+- [ ] **Step 10: 자리표시 화면과 내비게이션 작성**
+
+`presentation/src/main/java/com/sypark/flightdeal/ui/PlaceholderScreen.kt`:
+
+```kotlin
+package com.sypark.flightdeal.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
+import com.sypark.flightdeal.ui.theme.Background
+import com.sypark.flightdeal.ui.theme.TextSecondary
+
+@Composable
+fun PlaceholderScreen(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize().background(Background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = "준비 중입니다", color = TextSecondary, fontSize = 14.sp)
+    }
+}
+```
+
+`presentation/src/main/java/com/sypark/flightdeal/ui/FlightDealNavHost.kt`:
+
+```kotlin
+package com.sypark.flightdeal.ui
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.sypark.flightdeal.feed.DealFeedScreen
+import com.sypark.flightdeal.ui.theme.Background
+import com.sypark.flightdeal.ui.theme.Indigo
+import com.sypark.flightdeal.ui.theme.TextSecondary
+
+private enum class Tab(val route: String, val label: String) {
+    Deals("deals", "특가"),
+    Tracking("tracking", "추적"),
+    Search("search", "검색"),
+    Profile("profile", "내정보"),
+}
+
+@Composable
+fun FlightDealNavHost() {
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+
+    Scaffold(
+        containerColor = Background,
+        bottomBar = {
+            NavigationBar(containerColor = Background) {
+                Tab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = currentRoute == tab.route,
+                        onClick = {
+                            navController.navigate(tab.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        // 아이콘이 없으므로 선택 표시는 라벨 색으로만 한다.
+                        // 아이콘 없이 기본 인디케이터를 두면 라벨과 어긋난 알약이 떠 버린다.
+                        icon = {},
+                        label = { Text(text = tab.label, fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedTextColor = Indigo,
+                            unselectedTextColor = TextSecondary,
+                            indicatorColor = Color.Transparent,
+                        ),
+                    )
+                }
+            }
+        },
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = Tab.Deals.route,
+            modifier = Modifier.padding(innerPadding),
+        ) {
+            composable(Tab.Deals.route) { DealFeedScreen() }
+            composable(Tab.Tracking.route) { PlaceholderScreen() }
+            composable(Tab.Search.route) { PlaceholderScreen() }
+            composable(Tab.Profile.route) { PlaceholderScreen() }
+        }
+    }
+}
+```
+
+선택 표시를 라벨 색으로만 하는 이유가 있다. Material 3의 `NavigationBarItem`은 아이콘 자리에
+알약 모양 인디케이터를 그리는데, 아이콘이 비어 있으면 그 알약만 라벨과 동떨어진 위치에
+덩그러니 남는다. `indicatorColor`를 투명으로 두어 그것을 없앤다.
+
+- [ ] **Step 11: MainActivity와 매니페스트 교체**
+
+`presentation/src/main/java/com/sypark/flightdeal/MainActivity.kt`:
+
+```kotlin
+package com.sypark.flightdeal
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import com.sypark.flightdeal.ui.FlightDealNavHost
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
+import dagger.hilt.android.AndroidEntryPoint
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            FlightDealTheme {
+                FlightDealNavHost()
+            }
+        }
+    }
+}
+```
+
+`presentation/src/main/AndroidManifest.xml`. 테마는 Compose가 칠하므로 시스템 기본을 쓴다.
+런처 아이콘 리소스가 없으므로 `android:icon`을 넣지 않는다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".FlightDealApp"
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+```
+
+`res/values/strings.xml`에는 `app_name`만 남긴다. 나머지 문자열은 Composable 안에 직접 쓴다.
+
+- [ ] **Step 12: 뷰 스택 잔재 삭제**
+
+```bash
+cd /Users/sypark/AndroidStudioProjects/flightdeal/presentation/src/main
+rm -rf res/layout res/menu res/navigation res/drawable
+rm -f res/values/colors.xml res/values/themes.xml res/values/dimens.xml
+rm -f java/com/sypark/flightdeal/feed/DealAdapter.kt
+rm -f java/com/sypark/flightdeal/feed/DealBindingAdapters.kt
+rm -f java/com/sypark/flightdeal/feed/DealXmlBindingAdapters.java
+rm -f java/com/sypark/flightdeal/feed/DealFeedFragment.kt
+rm -rf java/com/sypark/flightdeal/placeholder
+rm -f ../test/java/com/sypark/flightdeal/feed/DealDiffCallbackTest.kt
+```
+
+`DealDiffCallbackTest`가 사라지는 이유: `LazyColumn`의 `key`가 `DiffUtil`을 대신하므로
+검증할 `DiffUtil.ItemCallback`이 존재하지 않는다.
+
+**Java 파일이 프로젝트에 하나도 남지 않아야 한다.** 확인한다.
+
+```bash
+find . -name "*.java" -not -path "*/build/*"
+```
+
+기대: 출력 없음.
 
 - [ ] **Step 13: 빌드와 테스트**
 
 ```bash
-./gradlew :presentation:testDebugUnitTest :presentation:assembleDebug
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew :domain:test :data:test :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: PASS (7건) + `BUILD SUCCESSFUL`
+기대: `:domain` 30건, `:data` 4건, `:presentation` 10건(ViewModel 7 + PriceFormat 3), BUILD SUCCESSFUL.
 
-- [ ] **Step 14: 실제 기기/에뮬레이터에서 확인**
+- [ ] **Step 14: 에뮬레이터에서 확인**
 
 ```bash
+~/Library/Android/sdk/emulator/emulator -avd Pixel_API_33 -no-snapshot -no-audio &
+~/Library/Android/sdk/platform-tools/adb wait-for-device
+# sys.boot_completed 가 1이 될 때까지 기다린 뒤
 ./gradlew :presentation:installDebug
-adb shell am start -n com.sypark.flightdeal/.MainActivity
+~/Library/Android/sdk/platform-tools/adb shell am start -n com.sypark.flightdeal/.MainActivity
+~/Library/Android/sdk/platform-tools/adb exec-out screencap -p > .superpowers/sdd/task-8-compose-screenshot.png
 ```
 
 눈으로 확인할 것:
 
 | 항목 | 기대 |
 |---|---|
-| 하단 탭 | 특가 / 추적 / 검색 / 내정보 4개, 선택된 탭이 인디고 |
+| 하단 탭 | 특가 / 추적 / 검색 / 내정보 4개. **선택된 탭만 인디고, 나머지는 회색** |
+| 하단 탭 | **정체불명의 알약 인디케이터가 없어야 한다** |
 | 상단 | "오늘의 특가" 굵은 제목, 아래 "어디로 떠나세요?" 검색바 |
-| 카드 | 도쿄 189,000원 / 방콕 241,000원 등 6장 |
+| 카드 | 도쿄 189,000원 / 방콕 241,000원 등 6장, 스크롤됨 |
 | 배지 | 연한 인디고 배경에 인디고 글씨로 `평균가 −xx%` |
 | 취소선 | 배지가 있는 카드에만 회색 취소선 기준가 |
 | 가격 | 화면에서 가장 큰 텍스트 |
 | 탭 이동 | 나머지 3탭에서 "준비 중입니다" |
 
-배지가 **한 장도 안 보이면** `FakeDealFixtures.monthlyPrices`의 배수가 잘못된 것이다.
-Task 7의 `할인 배지가 붙은 딜이 하나 이상 있다` 테스트가 통과했는지 먼저 확인한다.
+**스크린샷을 찍지 못했으면 그렇다고 보고한다. 보지 않은 화면을 묘사하지 않는다.**
 
 - [ ] **Step 15: 커밋**
 
 ```bash
-git add presentation
-git commit -m "feat: 인디고 테마와 특가 피드 화면 구현"
+git add -A
+git commit -m "refactor: 특가 피드 화면을 Compose로 전환하고 XML 뷰 스택 제거"
 ```
 
 ---
@@ -2787,196 +2802,175 @@ git commit -m "feat: 인디고 테마와 특가 피드 화면 구현"
 ## Task 9: 로딩·빈 데이터·오류 상태
 
 **Files:**
-- Create: `presentation/src/main/res/layout/view_deal_skeleton.xml`
-- Create: `presentation/src/main/res/layout/view_feed_message.xml`
-- Modify: `presentation/src/main/res/layout/fragment_deal_feed.xml`
-- Modify: `presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedFragment.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/FeedMessage.kt`
+- Create: `presentation/src/main/java/com/sypark/flightdeal/feed/DealSkeleton.kt`
+- Modify: `presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedScreen.kt`
 
 **Interfaces:**
-- Consumes: `DealFeedUiState` 네 가지 상태 (Task 7)
+- Consumes: `DealFeedUiState` 네 가지 상태 (Task 7), `DealCard` (Task 8)
 - Produces: 네 상태가 모두 화면에 표현되는 완성된 피드 화면
 
-- [ ] **Step 1: Shimmer 스켈레톤 레이아웃 작성**
+- [ ] **Step 1: 빈 상태·오류 메시지 Composable 작성**
 
-`presentation/src/main/res/layout/view_deal_skeleton.xml`:
+빈 상태와 오류 상태가 같은 Composable을 공유한다. 문구와 버튼 노출만 다르다.
 
-**`<layout>` 태그로 감싸는 것이 필수다.** 감싸지 않으면 DataBinding이 이 레이아웃의
-바인딩 클래스를 만들지 않고, `<include>`한 쪽에서 `binding.skeleton.shimmer`로
-접근할 수 없다. `binding.skeleton`이 바인딩 객체가 아니라 그냥 `View`가 되기 때문이다.
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <com.facebook.shimmer.ShimmerFrameLayout
-        android:id="@+id/shimmer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:paddingHorizontal="@dimen/screen_margin">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="92dp"
-                android:layout_marginBottom="@dimen/card_gap"
-                android:background="@drawable/bg_card" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="92dp"
-                android:layout_marginBottom="@dimen/card_gap"
-                android:background="@drawable/bg_card" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="92dp"
-                android:background="@drawable/bg_card" />
-        </LinearLayout>
-    </com.facebook.shimmer.ShimmerFrameLayout>
-</layout>
-```
-
-- [ ] **Step 2: 메시지 뷰 레이아웃 작성**
-
-빈 상태와 오류 상태가 같은 레이아웃을 공유한다. 문구와 버튼 노출만 다르다.
-
-`presentation/src/main/res/layout/view_feed_message.xml`:
-
-스켈레톤과 같은 이유로 `<layout>` 태그가 필요하다.
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:paddingHorizontal="32dp">
-
-        <TextView
-            android:id="@+id/messageTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/messageBody"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/retryButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:backgroundTint="@color/indigo"
-            android:text="@string/retry"
-            android:textColor="@color/white"
-            android:visibility="gone" />
-    </LinearLayout>
-</layout>
-```
-
-- [ ] **Step 3: 피드 레이아웃에 두 뷰 포함**
-
-`fragment_deal_feed.xml`의 `RecyclerView` **바로 다음**에 아래를 추가한다.
-제약은 `RecyclerView`와 동일하게 준다.
-
-```xml
-        <include
-            android:id="@+id/skeleton"
-            layout="@layout/view_deal_skeleton"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:visibility="gone"
-            app:layout_constraintTop_toBottomOf="@id/searchBar"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
-
-        <include
-            android:id="@+id/message"
-            layout="@layout/view_feed_message"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:visibility="gone"
-            app:layout_constraintTop_toBottomOf="@id/searchBar"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
-```
-
-- [ ] **Step 4: Fragment에서 네 상태를 모두 처리**
-
-`DealFeedFragment.kt`의 `onViewCreated`를 아래로 교체한다.
+`presentation/src/main/java/com/sypark/flightdeal/feed/FeedMessage.kt`:
 
 ```kotlin
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        val binding = FragmentDealFeedBinding.bind(view)
+package com.sypark.flightdeal.feed
 
-        val adapter = DealAdapter { /* 딥링크 연결은 이후 계획서에서 */ }
-        binding.dealList.adapter = adapter
-        binding.message.retryButton.setOnClickListener { viewModel.refresh() }
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.sypark.flightdeal.ui.theme.Indigo
+import com.sypark.flightdeal.ui.theme.TextPrimary
+import com.sypark.flightdeal.ui.theme.TextSecondary
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { state -> render(binding, adapter, state) }
-            }
-        }
-    }
-
-    private fun render(
-        binding: FragmentDealFeedBinding,
-        adapter: DealAdapter,
-        state: DealFeedUiState,
+@Composable
+fun FeedMessage(
+    title: String,
+    body: String,
+    onRetry: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        binding.dealList.isVisible = state is DealFeedUiState.Success
-        binding.skeleton.root.isVisible = state is DealFeedUiState.Loading
-        binding.message.root.isVisible =
-            state is DealFeedUiState.Empty || state is DealFeedUiState.Error
-
-        when (state) {
-            DealFeedUiState.Loading -> binding.skeleton.shimmer.startShimmer()
-
-            is DealFeedUiState.Success -> {
-                binding.skeleton.shimmer.stopShimmer()
-                adapter.submitList(state.deals)
-            }
-
-            DealFeedUiState.Empty -> {
-                binding.skeleton.shimmer.stopShimmer()
-                binding.message.messageTitle.setText(R.string.feed_empty_title)
-                binding.message.messageBody.setText(R.string.feed_empty_body)
-                // 빈 데이터는 오류가 아니다. 재시도해도 결과가 같으므로 버튼을 감춘다.
-                binding.message.retryButton.isVisible = false
-            }
-
-            is DealFeedUiState.Error -> {
-                binding.skeleton.shimmer.stopShimmer()
-                binding.message.messageTitle.setText(R.string.feed_error_title)
-                binding.message.messageBody.setText(R.string.feed_error_body)
-                binding.message.retryButton.isVisible = state.retryable
+        Text(text = title, color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = body,
+            color = TextSecondary,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        if (onRetry != null) {
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(containerColor = Indigo, contentColor = Color.White),
+                modifier = Modifier.padding(top = 16.dp),
+            ) {
+                Text(text = "다시 시도")
             }
         }
     }
+}
 ```
 
-`androidx.core.view.isVisible` import를 추가한다.
+`onRetry`를 nullable로 둔 것이 핵심이다. 빈 데이터는 오류가 아니라서 재시도해도 결과가 같다.
+버튼을 숨기는 게 아니라 아예 넘기지 않는다.
 
-- [ ] **Step 5: 세 상태를 눈으로 확인**
+- [ ] **Step 2: 로딩 스켈레톤 Composable 작성**
+
+`presentation/src/main/java/com/sypark/flightdeal/feed/DealSkeleton.kt`:
+
+```kotlin
+package com.sypark.flightdeal.feed
+
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.dp
+import com.sypark.flightdeal.ui.theme.Surface
+
+/**
+ * Shimmer 라이브러리 대신 Compose 자체 애니메이션을 쓴다.
+ * 회색 카드 세 장의 투명도만 왕복시키면 충분하다.
+ */
+@Composable
+fun DealSkeleton(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "skeletonAlpha",
+    )
+
+    Column(
+        modifier = modifier.fillMaxWidth().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        repeat(3) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(92.dp)
+                    .alpha(alpha)
+                    .background(Surface, RoundedCornerShape(16.dp)),
+            ) {}
+        }
+    }
+}
+```
+
+- [ ] **Step 3: 피드 화면에서 네 상태를 모두 처리**
+
+`DealFeedScreen.kt`의 `if (state is DealFeedUiState.Success) { ... }` 블록을 아래로 교체한다.
+
+```kotlin
+        when (val current = state) {
+            DealFeedUiState.Loading -> DealSkeleton()
+
+            is DealFeedUiState.Success -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(
+                    items = current.deals,
+                    key = { it.quote.route.destination.iata + it.quote.departDate },
+                ) { deal ->
+                    DealCard(item = deal, onClick = { /* 딥링크는 이후 계획서에서 */ })
+                }
+            }
+
+            DealFeedUiState.Empty -> FeedMessage(
+                title = "아직 특가가 없어요",
+                body = "가격 데이터가 모이면 여기에 보여드릴게요.",
+                // 빈 데이터는 오류가 아니다. 재시도해도 결과가 같으므로 버튼을 두지 않는다.
+                onRetry = null,
+            )
+
+            is DealFeedUiState.Error -> FeedMessage(
+                title = "가격을 불러오지 못했어요",
+                body = "네트워크를 확인하고 다시 시도해주세요.",
+                onRetry = if (current.retryable) viewModel::refresh else null,
+            )
+        }
+```
+
+`when`을 `val current = state`로 받는 이유는 스마트 캐스트를 얻기 위해서다.
+`Arrangement`와 `PaddingValues` import를 정리한다.
+
+- [ ] **Step 4: 세 상태를 눈으로 확인**
 
 `RepositoryModule`의 `provideFlightPriceRepository()`를 잠시 바꿔가며 확인한다.
 
@@ -2991,11 +2985,13 @@ FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.Failing)
 
 | 모드 | 기대 |
 |---|---|
-| `Normal` | 앱 시작 직후 회색 카드 3장이 반짝이다가(Shimmer) 딜 목록으로 바뀜 |
+| `Normal` | 앱 시작 직후 회색 카드 3장이 깜빡이다가 딜 목록으로 바뀜 |
 | `EmptyData` | "아직 특가가 없어요" + 설명. **재시도 버튼 없음** |
 | `Failing` | "가격을 불러오지 못했어요" + 인디고 재시도 버튼. 눌러도 다시 실패 |
 
-- [ ] **Step 6: `Normal`로 되돌리고 최종 확인**
+각 상태의 스크린샷을 `.superpowers/sdd/task-9-<mode>.png`로 남긴다.
+
+- [ ] **Step 5: `Normal`로 되돌리고 최종 확인**
 
 `RepositoryModule`을 `FakeFlightPriceRepository()`로 되돌린다.
 
@@ -3005,10 +3001,10 @@ FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.Failing)
 
 기대: 전체 PASS + `BUILD SUCCESSFUL`
 
-- [ ] **Step 7: 커밋**
+- [ ] **Step 6: 커밋**
 
 ```bash
-git add presentation
+git add -A
 git commit -m "feat: 특가 피드 로딩·빈 데이터·오류 상태 화면 추가"
 ```
 
