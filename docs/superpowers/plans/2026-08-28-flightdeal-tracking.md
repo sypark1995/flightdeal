@@ -2686,6 +2686,198 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 
 ---
 
+## Task 4b: 같은 노선을 두 번 등록하지 않기 (Task 4 리뷰에서 발견)
+
+**Files:**
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/entity/TrackedRouteEntity.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/TrackedRouteDao.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/local/RoomTrackedRouteRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/local/RoomTrackedRouteRepositoryTest.kt`
+- Modify: `domain/src/test/java/com/sypark/flightdeal/domain/usecase/TrackRouteUseCaseTest.kt`
+- Regenerate: `data/schemas/com.sypark.flightdeal.data.local.FlightDealDatabase/1.json`
+
+### 무엇이 잘못됐나
+
+같은 노선·같은 날짜·같은 여정 종류를 두 번 등록하는 것을 막는 게 없다. 추적 버튼을
+두 번 누르면 행이 둘 생기고, 목록에 같은 카드가 두 장 뜨고, 가격이 바뀌면 **알림이 두 번**
+가고, 워커는 레이트 리밋이 걸린 API를 두 번 호출한다.
+
+**지금 고치면 공짜다.** 스키마가 아직 버전 1이고 출시된 적이 없다. 나중에 고치려면
+유니크 인덱스를 추가하는 마이그레이션을 써야 하고, 이미 중복이 쌓인 기기에서는
+인덱스 생성 자체가 실패한다.
+
+### 고침
+
+**엔티티에 유니크 인덱스를 건다.** `TrackedRouteEntity`의 `indices`에 추가한다.
+
+```kotlin
+@Entity(
+    tableName = "tracked_route",
+    indices = [
+        Index(
+            value = ["originIata", "destinationIata", "departDate", "returnDate", "tripType"],
+            unique = true,
+        ),
+    ],
+)
+```
+
+`androidx.room.Index` import를 추가한다.
+
+**DAO가 충돌을 조용히 넘기고, 기존 id를 찾을 수 있게 한다.**
+
+```kotlin
+    /** 이미 있으면 -1을 돌려준다. 중복 등록은 오류가 아니라 "이미 추적 중"이다. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(entity: TrackedRouteEntity): Long
+
+    @Query(
+        "SELECT id FROM tracked_route WHERE originIata = :origin " +
+            "AND destinationIata = :destination AND departDate = :departDate " +
+            "AND returnDate IS :returnDate AND tripType = :tripType LIMIT 1"
+    )
+    suspend fun findId(
+        origin: String,
+        destination: String,
+        departDate: String,
+        returnDate: String?,
+        tripType: String,
+    ): Long?
+```
+
+`androidx.room.OnConflictStrategy` import를 추가한다.
+`returnDate IS :returnDate`를 쓰는 이유는 `= NULL`이 SQLite에서 항상 거짓이기 때문이다.
+편도는 `returnDate`가 null이므로 `=`로는 영영 매칭되지 않는다.
+
+**저장소가 이미 있으면 그 id를 돌려준다.** `add`의 마지막을 바꾼다.
+
+```kotlin
+    ): Long {
+        val entity = TrackedRouteEntity(
+            originIata = route.origin.iata,
+            destinationIata = route.destination.iata,
+            departDate = departDate.toString(),
+            returnDate = returnDate?.toString(),
+            tripType = tripType.name,
+            targetPrice = targetPrice?.amount,
+            createdAt = clock.instant().epochSecond,
+        )
+
+        val inserted = dao.insert(entity)
+        // 이미 추적 중이면 새로 만들지 않고 그것의 id를 돌려준다.
+        // 등록을 멱등하게 두면 버튼을 두 번 눌러도 카드가 하나만 남는다.
+        return if (inserted != -1L) {
+            inserted
+        } else {
+            dao.findId(
+                origin = entity.originIata,
+                destination = entity.destinationIata,
+                departDate = entity.departDate,
+                returnDate = entity.returnDate,
+                tripType = entity.tripType,
+            ) ?: error("중복이라 했는데 찾을 수 없다")
+        }
+    }
+```
+
+### 테스트
+
+`RoomTrackedRouteRepositoryTest.kt`에 추가한다.
+
+```kotlin
+    @Test
+    fun `같은 노선을 두 번 등록해도 하나만 남는다`() = runTest {
+        val first = addTokyo()
+        val second = addTokyo()
+
+        // 두 번 누르면 카드가 두 장 뜨고 알림도 두 번 간다.
+        assertEquals(first, second)
+        assertEquals(1, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `여정 종류가 다르면 따로 등록된다`() = runTest {
+        val roundTrip = addTokyo(TripType.ROUND_TRIP)
+        val oneWay = addTokyo(TripType.ONE_WAY)
+
+        // 왕복과 편도는 가격대가 다르다. 별개의 추적이다.
+        assertNotEquals(roundTrip, oneWay)
+        assertEquals(2, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `귀국일이 없는 편도끼리도 중복으로 잡힌다`() = runTest {
+        val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+        val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+
+        // SQLite에서 `= NULL`은 항상 거짓이다. IS를 안 쓰면 편도는 중복 검사를 빠져나간다.
+        assertEquals(first, second)
+        assertEquals(1, tracked.observeAll().first().size)
+    }
+```
+
+`org.junit.Assert.assertNotEquals` import를 추가한다.
+
+### 테스트 가짜의 충실도도 함께 고친다
+
+`TrackRouteUseCaseTest.kt`의 `FakeTrackedRoutes.add`가 `tripType`만 기록하고 나머지를
+버린다. `targetPrice`를 항상 null로 넘기는 구현도 다섯 테스트를 통과한다.
+`targetPrice`는 목표가 도달 알림의 근거다.
+
+```kotlin
+    private class FakeTrackedRoutes : TrackedRouteRepository {
+        var lastRoute: Route? = null
+        var lastDepartDate: LocalDate? = null
+        var lastReturnDate: LocalDate? = null
+        var lastTripType: TripType? = null
+        var lastTargetPrice: Won? = null
+        var removed: Long? = null
+
+        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
+        override suspend fun getAll(): List<TrackedRoute> = emptyList()
+        override suspend fun add(
+            route: Route,
+            departDate: LocalDate,
+            returnDate: LocalDate?,
+            tripType: TripType,
+            targetPrice: Won?,
+        ): Long {
+            lastRoute = route
+            lastDepartDate = departDate
+            lastReturnDate = returnDate
+            lastTripType = tripType
+            lastTargetPrice = targetPrice
+            return 42L
+        }
+        override suspend fun remove(id: Long) { removed = id }
+    }
+```
+
+기존 `added` 목록을 쓰던 테스트는 `lastTripType`을 보도록 고치고, 아래를 추가한다.
+
+```kotlin
+    @Test
+    fun `시세의 노선과 날짜, 목표가를 그대로 넘긴다`() = runTest {
+        val routes = FakeTrackedRoutes()
+        val useCase = TrackRouteUseCase(routes, FakeHistory())
+
+        useCase(quote, TripType.ROUND_TRIP, targetPrice = Won(280_000))
+
+        assertEquals(quote.route, routes.lastRoute)
+        assertEquals(quote.departDate, routes.lastDepartDate)
+        assertEquals(quote.returnDate, routes.lastReturnDate)
+        // 목표가는 목표 도달 알림의 근거다. 흘리면 알림이 영영 안 온다.
+        assertEquals(Won(280_000), routes.lastTargetPrice)
+    }
+```
+
+### 스키마 재생성
+
+유니크 인덱스는 테이블 구조를 바꾼다. 빌드하면 `data/schemas/.../1.json`이 갱신되므로
+**함께 커밋한다.** 버전은 1 그대로다 — 출시된 적이 없으므로 마이그레이션이 필요 없다.
+
+---
+
 ## 완료 기준
 
 - [ ] 딜 카드에서 노선을 추적 등록할 수 있고, 등록 즉시 첫 스냅샷이 남는다
@@ -2698,7 +2890,8 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - [ ] 공항은 IATA로만 동일성을 판정한다
 - [ ] `:domain`에 안드로이드 타입도 Travelpayouts라는 단어도 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 51, `:data` 74, `:presentation` 19
+- [ ] 같은 노선을 두 번 등록해도 하나만 남는다
+- [ ] 전체 테스트 통과. `:domain` 52, `:data` 79, `:presentation` 19
 
 ## 다음 계획서
 
