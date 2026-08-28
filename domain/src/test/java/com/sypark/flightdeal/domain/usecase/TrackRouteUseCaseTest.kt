@@ -134,4 +134,16 @@ class TrackRouteUseCaseTest {
         // 이력은 외래키 CASCADE가 함께 지운다.
         assertEquals(7L, routes.removed)
     }
+
+    @Test
+    fun `이미 추적 중이면 스냅샷을 덧쓰지 않는다`() = runTest {
+        val history = FakeHistory()
+        val useCase = TrackRouteUseCase(FakeTrackedRoutes(), history)
+
+        useCase(quote, TripType.ROUND_TRIP)
+        useCase(quote, TripType.ROUND_TRIP)
+
+        // 덧쓰면 그게 최신이 되어 다음 비교의 기준선이 리셋된다.
+        assertEquals(1, history.appended.size)
+    }
 }

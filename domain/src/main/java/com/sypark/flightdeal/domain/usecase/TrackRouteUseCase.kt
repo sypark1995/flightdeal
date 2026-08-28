@@ -34,14 +34,18 @@ class TrackRouteUseCase @Inject constructor(
             targetPrice = targetPrice,
         )
 
-        history.append(
-            PriceSnapshot(
-                trackedRouteId = id,
-                price = quote.price,
-                tripType = tripType,
-                capturedAt = quote.foundAt,
+        // 이미 추적 중이면 기준선이 있다. 덧쓰면 다음 변동 판정이 어긋난다.
+        // 등록은 됐는데 스냅샷 쓰기가 실패했던 노선은 여기서 채워진다.
+        if (history.latest(id) == null) {
+            history.append(
+                PriceSnapshot(
+                    trackedRouteId = id,
+                    price = quote.price,
+                    tripType = tripType,
+                    capturedAt = quote.foundAt,
+                )
             )
-        )
+        }
 
         return id
     }
