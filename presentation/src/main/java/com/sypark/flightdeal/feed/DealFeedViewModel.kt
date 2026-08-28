@@ -1,5 +1,6 @@
 package com.sypark.flightdeal.feed
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.Airport
@@ -41,16 +42,27 @@ class DealFeedViewModel @Inject constructor(
                 when (val result = getDealFeed(Airport.INCHEON)) {
                     is AppResult.Success -> DealFeedUiState.Success(result.data)
                     AppResult.Empty -> DealFeedUiState.Empty
-                    is AppResult.NetworkError -> DealFeedUiState.Error(retryable = true)
-                    is AppResult.Unknown -> DealFeedUiState.Error(retryable = false)
+                    is AppResult.NetworkError -> {
+                        Log.w(TAG, "네트워크 오류로 특가 조회 실패, 재시도 가능", result.cause)
+                        DealFeedUiState.Error(retryable = true)
+                    }
+                    is AppResult.Unknown -> {
+                        Log.e(TAG, "알 수 없는 오류로 특가 조회 실패", result.cause)
+                        DealFeedUiState.Error(retryable = false)
+                    }
                 }
             } catch (e: CancellationException) {
                 // 취소는 오류가 아니다. 삼키면 취소된 요청이 화면을 오류로 만든다.
                 throw e
-            } catch (e: Throwable) {
+            } catch (e: Exception) {
                 // Repository 구현체가 AppResult 대신 예외를 던져도 앱이 죽어서는 안 된다.
+                Log.e(TAG, "특가 조회 중 예외 발생", e)
                 DealFeedUiState.Error(retryable = false)
             }
         }
+    }
+
+    private companion object {
+        const val TAG = "DealFeed"
     }
 }
