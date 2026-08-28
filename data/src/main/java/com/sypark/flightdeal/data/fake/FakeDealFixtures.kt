@@ -5,7 +5,6 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.Won
 import java.time.Instant
-import java.time.LocalDate
 import java.time.YearMonth
 
 /**
@@ -13,6 +12,8 @@ import java.time.YearMonth
  */
 object FakeDealFixtures {
 
+    // Int는 더 이상 "특가" 자체가 아니라 monthlyPrices()가 만드는 월간 분포의 기준가(base)다.
+    // deals()는 이 분포에서 가장 싼 값을 골라 특가로 노출한다.
     private val DESTINATIONS = listOf(
         Airport("TYO", "도쿄", "일본") to 189_000,
         Airport("BKK", "방콕", "태국") to 241_000,
@@ -24,16 +25,14 @@ object FakeDealFixtures {
 
     private val AIRLINES = listOf("대한항공", "아시아나항공", "티웨이항공", "제주항공")
 
-    fun deals(): List<PriceQuote> = DESTINATIONS.mapIndexed { index, (destination, price) ->
-        PriceQuote(
-            route = Route(Airport.INCHEON, destination),
-            departDate = LocalDate.of(2026, 10, 12).plusDays(index.toLong()),
-            returnDate = LocalDate.of(2026, 10, 16).plusDays(index.toLong()),
-            price = Won(price),
-            airline = AIRLINES[index % AIRLINES.size],
-            foundAt = Instant.parse("2026-08-28T00:00:00Z"),
-            deepLink = "https://example.com/booking/${destination.iata}",
-        )
+    // 특가 목록이 참조하는 달. monthlyPrices()가 만드는 분포와 항상 같은 달을 봐야
+    // 같은 노선·날짜에 대해 두 화면이 다른 가격을 말하지 않는다.
+    private val DEAL_MONTH = YearMonth.of(2026, 10)
+
+    fun deals(): List<PriceQuote> = DESTINATIONS.map { (destination, _) ->
+        val route = Route(Airport.INCHEON, destination)
+        monthlyPrices(route, DEAL_MONTH).minByOrNull { it.price.amount }
+            ?: error("월간 가격 데이터가 비어 있습니다: ${destination.iata}")
     }
 
     /**
