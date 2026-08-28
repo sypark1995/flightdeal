@@ -95,15 +95,37 @@ class TravelpayoutsFlightPriceRepositoryTest {
     }
 
     @Test
-    fun `success가 false면 Empty로 취급하지 않고 Unknown이다`() = runTest {
+    fun `200이어도 success가 false면 Unknown이다`() = runTest {
         server.enqueue(
-            MockResponse().setResponseCode(400)
-                .setBody("""{"error":"bad request","data":null,"status":400,"success":false}""")
+            MockResponse().setResponseCode(200)
+                .setBody("""{"error":"something","data":null,"success":false}""")
         )
 
         val result = repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
 
         assertTrue(result is AppResult.Unknown)
+    }
+
+    @Test
+    fun `한국에서 예약 가능한 예약처를 우선해 고른다`() = runTest {
+        // 첫 항목이 더 싸지만 CIS 예약처다. 두 번째가 Trip.com이다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-07T15:15:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val deals = (repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        // 더 싸더라도 한국에서 결제가 안 되는 곳이면 소용없다.
+        assertEquals(1, deals.size)
+        assertEquals(120_000, deals.first().price.amount)
     }
 
     @Test

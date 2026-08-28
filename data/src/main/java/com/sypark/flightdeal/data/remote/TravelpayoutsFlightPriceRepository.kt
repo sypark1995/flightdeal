@@ -9,6 +9,9 @@ import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import java.io.IOException
@@ -33,14 +36,19 @@ class TravelpayoutsFlightPriceRepository(
     ): AppResult<List<PriceQuote>> = call {
         val month = YearMonth.now(clock).plusMonths(LEAD_MONTHS)
 
-        // 목적지마다 그 달의 최저가 하나씩. sorting=price로 요청하므로 첫 항목이 가장 싸다.
-        val candidates = destinations.mapNotNull { destination ->
-            fetch(origin.iata, destination, month, tripType).firstOrNull()
+        coroutineScope {
+            destinations
+                .map { destination -> async { fetch(origin.iata, destination, month, tripType) } }
+                .awaitAll()
+                .mapNotNull { quotes ->
+                    // 목적지마다 한 건만 고른다. 한국에서 예약 가능한 예약처를 우선하되,
+                    // 그런 곳이 없으면 그 노선의 최저가라도 보여준다.
+                    // minCount=1이어야 정책이 실제로 고르는 일을 한다.
+                    GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()
+                }
+                .take(limit)
+                .map { it.quote }
         }
-
-        GatePolicy.prioritize(candidates, { it.gate }, minCount = limit)
-            .take(limit)
-            .map { it.quote }
     }
 
     override suspend fun calendarPrices(
