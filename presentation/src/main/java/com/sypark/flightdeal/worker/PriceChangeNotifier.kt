@@ -23,25 +23,28 @@ class PriceChangeNotifier @Inject constructor(
      * 한 번의 워커 실행에서 바뀐 것들을 알림 하나로 묶는다.
      * 노선마다 따로 쏘면 추적을 여러 개 걸어둔 사용자에게 알림 폭탄이 된다.
      *
-     * @return 알림을 실제로 띄웠으면 true. 권한이 없거나 띄울 것이 없으면 false —
-     *   호출부는 이 값을 보고서야 통보 기준선을 옮긴다.
+     * @return 알림에 실제로 담겨 보인 변동들. 권한이 없거나, 노선 정보가 없어 문구를
+     *   만들지 못했거나, 애초에 입력이 비어 있으면 빈 리스트다 — 호출부는 이 리스트에
+     *   담긴 변동만 통보된 것으로 보고 기준선을 옮겨야 한다. 화면에 뜨지 않은 변동을
+     *   같이 옮기면 사용자는 보지도 못한 변동을 "통보받은 것"으로 잃는다.
      */
-    fun notify(changes: List<PriceChange>, routes: List<TrackedRoute>): Boolean {
-        if (changes.isEmpty()) return false
+    fun notify(changes: List<PriceChange>, routes: List<TrackedRoute>): List<PriceChange> {
+        if (changes.isEmpty()) return emptyList()
 
         ensureChannel()
-        if (!notificationsAllowed()) return false
+        if (!notificationsAllowed()) return emptyList()
 
         val byId = routes.associateBy { it.id }
-        val lines = changes.mapNotNull { change ->
-            val route = byId[change.trackedRouteId] ?: return@mapNotNull null
+        val shown = changes.filter { byId.containsKey(it.trackedRouteId) }
+        val lines = shown.map { change ->
+            val route = byId.getValue(change.trackedRouteId)
             val arrow = if (change.direction == Direction.DOWN) "▼" else "▲"
             val target = if (change.reachedTarget) " · 목표가 도달" else ""
             "$arrow ${route.route.destination.cityKo} ${formatWon(change.current)}$target"
         }
-        if (lines.isEmpty()) return false
+        if (lines.isEmpty()) return emptyList()
 
-        val title = if (changes.size == 1) "항공권 가격이 바뀌었어요" else "항공권 ${changes.size}건의 가격이 바뀌었어요"
+        val title = if (shown.size == 1) "항공권 가격이 바뀌었어요" else "항공권 ${shown.size}건의 가격이 바뀌었어요"
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -65,7 +68,7 @@ class PriceChangeNotifier @Inject constructor(
             .build()
 
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-        return true
+        return shown
     }
 
     /**

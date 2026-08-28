@@ -24,10 +24,10 @@ class PriceCheckWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result = try {
         val changes = checkPrices()
-        // 전달된 뒤에만 기준선을 옮긴다. 순서가 뒤집히면 알림이 실패한 변동이 사라진다.
-        if (notifier.notify(changes, trackedRoutes.getAll())) {
-            confirmNotified(changes)
-        }
+        // 실제로 알림에 담겨 사용자에게 보인 변동만 기준선을 옮긴다. 그렇지 않으면
+        // 화면에 뜨지도 않은 변동이 통보된 것으로 처리돼 영영 사라진다.
+        val shown = notifier.notify(changes, trackedRoutes.getAll())
+        if (shown.isNotEmpty()) confirmNotified(shown)
         Log.d(TAG, "가격 확인 완료, 변동 ${changes.size}건")
         Result.success()
     } catch (e: CancellationException) {
