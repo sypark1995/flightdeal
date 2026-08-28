@@ -136,8 +136,8 @@ class AirportTest {
 
     @Test
     fun `IATA가 같으면 표시 이름이 달라도 같은 공항이다`() {
-        // 매퍼는 국가명을 채우지 않고, 상수는 채운다. 그래도 같은 인천이다.
-        assertEquals(Airport("ICN", "서울", ""), Airport("ICN", "서울", "대한민국"))
+        // 도시명까지 다르게 둔다. cityKo를 고정하면 cityKo를 비교하는 잘못된 구현도 통과한다.
+        assertEquals(Airport("ICN", "서울", ""), Airport("ICN", "인천", "대한민국"))
     }
 
     @Test
