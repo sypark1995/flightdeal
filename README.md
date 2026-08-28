@@ -43,7 +43,7 @@ Java 소스는 한 줄도 없다. compileSdk/targetSdk 36, minSdk 26.
 
 ## 현재 상태
 
-기반 구축 완료. 테스트 61건 통과 (`:domain` 31 · `:data` 20 · `:presentation` 10).
+기반 구축 완료. 테스트 51건 통과 (`:domain` 31 · `:data` 10 · `:presentation` 10).
 
 특가 피드 화면이 로딩·성공·빈 데이터·오류 네 상태를 모두 처리한다. 지금은 인메모리 Fake
 구현체가 데이터를 공급하며, 실제 API 연동은 `:data`의 `FlightPriceRepository` 구현체를
