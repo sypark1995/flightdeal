@@ -2903,6 +2903,56 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
     }
 ```
 
+### 등록이 멱등해지면 스냅샷도 멱등해야 한다
+
+`add`가 기존 id를 돌려주게 되면서 `TrackRouteUseCase`가 그걸 모른 채 새 스냅샷을 남긴다.
+`latestFor`가 그것을 최신으로 잡으므로 **다음 비교의 기준선이 리셋된다.**
+행 하나로 막아놓고 스냅샷이 늘면 반쪽짜리 수정이다.
+
+첫 스냅샷의 존재 이유는 "비교 대상 만들기"다. 이미 있으면 만들지 않는다.
+
+```kotlin
+        val id = trackedRoutes.add(
+            route = quote.route,
+            departDate = quote.departDate,
+            returnDate = quote.returnDate,
+            tripType = tripType,
+            targetPrice = targetPrice,
+        )
+
+        // 이미 추적 중이면 기준선이 있다. 덧쓰면 다음 변동 판정이 어긋난다.
+        // 등록은 됐는데 스냅샷 쓰기가 실패했던 노선은 여기서 채워진다.
+        if (history.latest(id) == null) {
+            history.append(
+                PriceSnapshot(
+                    trackedRouteId = id,
+                    price = quote.price,
+                    tripType = tripType,
+                    capturedAt = quote.foundAt,
+                )
+            )
+        }
+
+        return id
+```
+
+테스트를 추가한다. `FakeHistory.latest`가 `appended.lastOrNull()`을 돌려주므로
+두 번째 호출에서 이미 하나가 있는 상태가 재현된다.
+
+```kotlin
+    @Test
+    fun `이미 추적 중이면 스냅샷을 덧쓰지 않는다`() = runTest {
+        val history = FakeHistory()
+        val useCase = TrackRouteUseCase(FakeTrackedRoutes(), history)
+
+        useCase(quote, TripType.ROUND_TRIP)
+        useCase(quote, TripType.ROUND_TRIP)
+
+        // 덧쓰면 그게 최신이 되어 다음 비교의 기준선이 리셋된다.
+        assertEquals(1, history.appended.size)
+    }
+```
+
 ### 스키마 재생성
 
 유니크 인덱스는 테이블 구조를 바꾼다. 빌드하면 `data/schemas/.../1.json`이 갱신되므로
@@ -2923,7 +2973,7 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - [ ] `:domain`에 안드로이드 타입도 Travelpayouts라는 단어도 없다
 - [ ] `.java` 파일이 하나도 없다
 - [ ] 같은 노선을 두 번 등록해도 하나만 남는다
-- [ ] 전체 테스트 통과. `:domain` 52, `:data` 79, `:presentation` 19
+- [ ] 전체 테스트 통과. `:domain` 53, `:data` 80, `:presentation` 19
 
 ## 다음 계획서
 
