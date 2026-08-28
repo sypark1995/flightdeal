@@ -8,11 +8,19 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.Dispatcher
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+
+/**
+ * 로그에 남길 URL. 토큰이 쿼리에 실려 있으므로 지우고 남긴다.
+ * 이 프로젝트의 저장소는 공개다 — 로그캣에 키가 남으면 안 된다.
+ */
+internal fun HttpUrl.withoutToken(): HttpUrl =
+    newBuilder().removeAllQueryParameters("token").build()
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -51,7 +59,7 @@ object NetworkModule {
             if (BuildConfig.DEBUG) {
                 // HttpLoggingInterceptor는 BASIC 레벨에서도 쿼리를 통째로 찍는다.
                 // 토큰이 쿼리에 실려 있으므로 직접 지운 URL만 남긴다.
-                val safeUrl = request.url.newBuilder().removeAllQueryParameters("token").build()
+                val safeUrl = request.url.withoutToken()
                 val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
                 Log.d(TAG, "${request.method} $safeUrl → ${response.code} (${elapsedMs}ms)")
             }
