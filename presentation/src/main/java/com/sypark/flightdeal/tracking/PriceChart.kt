@@ -20,8 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.feed.formatWon
-import com.sypark.flightdeal.ui.theme.Indigo
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 /**
  * 가격 이력을 선 그래프로 그린다. 좌표 계산은 [PriceChartGeometry]가 순수하게 맡고,
@@ -44,7 +43,7 @@ fun PriceChart(
         ) {
             Text(
                 text = "가격을 두 번 이상 확인하면 추이를 보여드릴게요",
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 12.sp,
             )
         }
@@ -52,6 +51,11 @@ fun PriceChart(
     }
 
     val geometry = PriceChartGeometry.of(snapshots, targetPrice)
+
+    // Canvas의 DrawScope는 Composable 스코프가 아니라서 그 안에서 팔레트를
+    // 직접 읽을 수 없다. Canvas 밖에서 값을 꺼내 변수로 넘긴다.
+    val indigo = FlightDealTheme.colors.indigo
+    val textSecondary = FlightDealTheme.colors.textSecondary
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 눈금은 그래프 위에 겹쳐 놓지 않는다. 선이 축 끝에 닿으면 글자와 겹쳐
@@ -62,7 +66,7 @@ fun PriceChart(
             } else {
                 "최고 ${formatWon(geometry.scaleHigh)} · 최저 ${formatWon(geometry.scaleLow)}"
             },
-            color = TextSecondary,
+            color = FlightDealTheme.colors.textSecondary,
             fontSize = 11.sp,
         )
 
@@ -88,13 +92,13 @@ fun PriceChart(
             }
             drawPath(
                 path = path,
-                color = Indigo,
+                color = indigo,
                 style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
             )
 
             geometry.targetY?.let { targetY ->
                 drawLine(
-                    color = TextSecondary,
+                    color = textSecondary,
                     start = Offset(0f, targetY * h),
                     end = Offset(w, targetY * h),
                     strokeWidth = 1.dp.toPx(),
@@ -103,7 +107,7 @@ fun PriceChart(
             }
 
             val last = toOffset(geometry.points.last())
-            drawCircle(color = Indigo, radius = 3.dp.toPx(), center = last)
+            drawCircle(color = indigo, radius = 3.dp.toPx(), center = last)
         }
     }
 }

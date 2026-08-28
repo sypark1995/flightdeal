@@ -8,15 +8,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
-import com.sypark.flightdeal.ui.theme.Background
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 @Composable
 fun PlaceholderScreen(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.fillMaxSize().background(Background),
+        modifier = modifier.fillMaxSize().background(FlightDealTheme.colors.background),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = "준비 중입니다", color = TextSecondary, fontSize = 14.sp)
+        Text(text = "준비 중입니다", color = FlightDealTheme.colors.textSecondary, fontSize = 14.sp)
     }
 }

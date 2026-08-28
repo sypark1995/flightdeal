@@ -17,7 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
-import com.sypark.flightdeal.ui.theme.Surface
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 /**
  * Shimmer 라이브러리 대신 Compose 자체 애니메이션을 쓴다.
@@ -43,7 +43,7 @@ fun DealSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth()
                     .height(92.dp)
                     .alpha(alpha)
-                    .background(Surface, RoundedCornerShape(16.dp)),
+                    .background(FlightDealTheme.colors.surface, RoundedCornerShape(16.dp)),
             ) {}
         }
     }

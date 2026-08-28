@@ -1,6 +1,7 @@
 package com.sypark.flightdeal
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -19,11 +20,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 이제 앱이 다크 모드를 지원하므로 시스템 바 아이콘도 배경에 맞춰 골라야 한다.
+        // 다크에서 light()를 그대로 쓰면 어두운 배경 위에 흰 아이콘이 아니라
+        // 다시 어두운 아이콘이 그려져 상태 바가 안 보이게 된다.
+        val isDarkMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val systemBarStyle = if (isDarkMode) {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        }
         enableEdgeToEdge(
-            // 앱이 라이트 전용이므로 시스템 uiMode가 아니라 앱 배경에 맞춰 고정한다.
-            // 기본 오버로드는 기기 다크 모드에서 흰 아이콘을 흰 배경 위에 그린다.
-            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            statusBarStyle = systemBarStyle,
+            navigationBarStyle = systemBarStyle,
         )
         openTracking.value = intent?.getBooleanExtra(EXTRA_OPEN_TRACKING, false) == true
         // 인텐트가 그대로 남아 있으면 회전할 때마다 다시 읽힌다 — 특가로 옮겨간 뒤

@@ -20,9 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sypark.flightdeal.ui.theme.Background
-import com.sypark.flightdeal.ui.theme.TextPrimary
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 @Composable
 fun TrackingScreen(
@@ -31,10 +29,10 @@ fun TrackingScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    Column(modifier = modifier.fillMaxSize().background(Background)) {
+    Column(modifier = modifier.fillMaxSize().background(FlightDealTheme.colors.background)) {
         Text(
             text = "추적 중인 항공권",
-            color = TextPrimary,
+            color = FlightDealTheme.colors.textPrimary,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(16.dp),
@@ -49,7 +47,7 @@ fun TrackingScreen(
             ) {
                 Text(
                     text = "특가 탭에서 마음에 드는 항공권을 추적해보세요.\n가격이 바뀌면 알려드릴게요.",
-                    color = TextSecondary,
+                    color = FlightDealTheme.colors.textSecondary,
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
                 )

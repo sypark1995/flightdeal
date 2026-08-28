@@ -29,11 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.feed.formatWon
-import com.sypark.flightdeal.ui.theme.Outline
-import com.sypark.flightdeal.ui.theme.PriceDown
-import com.sypark.flightdeal.ui.theme.PriceUp
-import com.sypark.flightdeal.ui.theme.TextPrimary
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 @Composable
 fun TrackedRouteCard(
@@ -62,7 +58,7 @@ fun TrackedRouteCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, Outline, RoundedCornerShape(16.dp))
+            .border(1.dp, FlightDealTheme.colors.outline, RoundedCornerShape(16.dp))
             // 펼침/접힘 사이에 카드 높이가 애니메이션으로 변한다.
             .animateContentSize()
             .clickable { expanded = !expanded }
@@ -71,14 +67,14 @@ fun TrackedRouteCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "${item.tracked.route.origin.cityKo} → ${item.tracked.route.destination.cityKo}",
-                color = TextPrimary,
+                color = FlightDealTheme.colors.textPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = "해제",
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
@@ -104,14 +100,14 @@ fun TrackedRouteCard(
                     // 최신으로 오해하지 않는다.
                     if (item.hasDeparted) append(" · 지난 여정")
                 },
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 11.sp,
             )
             Spacer(modifier = Modifier.weight(1f))
             // 펼침 여부를 알려주는 화살표. 카드 전체가 클릭 대상이라 별도 클릭 처리는 없다.
             Text(
                 text = if (expanded) "▴" else "▾",
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 11.sp,
             )
         }
@@ -124,7 +120,7 @@ fun TrackedRouteCard(
             Text(
                 text = item.latest?.let { formatWon(it.price) } ?: "가격을 모으는 중이에요",
                 // 지난 여정의 가격은 더는 최신이 아니다. 옅게 낮춰서 구분한다.
-                color = if (item.hasDeparted) TextSecondary else TextPrimary,
+                color = if (item.hasDeparted) FlightDealTheme.colors.textSecondary else FlightDealTheme.colors.textPrimary,
                 fontSize = if (item.latest != null) 21.sp else 13.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -138,7 +134,7 @@ fun TrackedRouteCard(
                 Text(
                     // 색이 정보를 나른다. 하락은 항상 초록, 상승은 항상 빨강.
                     text = if (dropped) "▼ ${formatWon(previous.price)}" else "▲ ${formatWon(previous.price)}",
-                    color = if (dropped) PriceDown else PriceUp,
+                    color = if (dropped) FlightDealTheme.colors.priceDown else FlightDealTheme.colors.priceUp,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -148,7 +144,7 @@ fun TrackedRouteCard(
         item.tracked.targetPrice?.let { target ->
             Text(
                 text = "목표가 ${formatWon(target)}",
-                color = TextSecondary,
+                color = FlightDealTheme.colors.textSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 4.dp),
             )

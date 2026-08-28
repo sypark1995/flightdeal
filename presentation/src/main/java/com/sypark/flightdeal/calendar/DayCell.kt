@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -18,10 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.Won
-import com.sypark.flightdeal.ui.theme.Indigo
-import com.sypark.flightdeal.ui.theme.IndigoSubtle
-import com.sypark.flightdeal.ui.theme.TextPrimary
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import java.time.LocalDate
 
 /**
@@ -55,11 +53,17 @@ fun DayCell(
     val isDimmed = quote != null && !isClickable
 
     val cellBackground = when {
-        isCheapest && quote != null -> Indigo
-        isBelowMedian && quote != null -> IndigoSubtle
+        isCheapest && quote != null -> FlightDealTheme.colors.indigo
+        isBelowMedian && quote != null -> FlightDealTheme.colors.indigoSubtle
         else -> Color.Transparent
     }
-    val textColor = if (isCheapest && quote != null) Color.White else TextPrimary
+    // 흰색을 고정하지 않는다 — 다크에서 indigo는 밝은 라벤더라 흰 글씨가 잘 안 읽힌다.
+    // onPrimary는 Theme.kt가 라이트/다크마다 대비를 맞춰 계산한다.
+    val textColor = if (isCheapest && quote != null) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        FlightDealTheme.colors.textPrimary
+    }
 
     Column(
         modifier = modifier
@@ -73,7 +77,7 @@ fun DayCell(
     ) {
         Text(
             text = date.dayOfMonth.toString(),
-            color = if (quote == null) TextSecondary else textColor,
+            color = if (quote == null) FlightDealTheme.colors.textSecondary else textColor,
             fontSize = 13.sp,
             fontWeight = if (isCheapest && quote != null) FontWeight.Bold else FontWeight.Normal,
         )

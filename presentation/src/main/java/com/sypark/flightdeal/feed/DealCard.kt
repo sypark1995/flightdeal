@@ -19,11 +19,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sypark.flightdeal.domain.model.DealItem
-import com.sypark.flightdeal.ui.theme.Indigo
-import com.sypark.flightdeal.ui.theme.IndigoSubtle
-import com.sypark.flightdeal.ui.theme.Outline
-import com.sypark.flightdeal.ui.theme.TextPrimary
-import com.sypark.flightdeal.ui.theme.TextSecondary
+import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 @Composable
 fun DealCard(
@@ -40,13 +36,13 @@ fun DealCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, Outline, RoundedCornerShape(16.dp))
+            .border(1.dp, FlightDealTheme.colors.outline, RoundedCornerShape(16.dp))
             .let { if (hasBookingLink) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 14.dp, vertical = 13.dp),
     ) {
         Text(
             text = item.quote.route.destination.cityKo,
-            color = TextPrimary,
+            color = FlightDealTheme.colors.textPrimary,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -59,28 +55,28 @@ fun DealCard(
             item.discountPercent?.let { percent ->
                 Text(
                     text = "평균가 −$percent%",
-                    color = Indigo,
+                    color = FlightDealTheme.colors.indigo,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
-                        .background(IndigoSubtle, RoundedCornerShape(6.dp))
+                        .background(FlightDealTheme.colors.indigoSubtle, RoundedCornerShape(6.dp))
                         .padding(horizontal = 7.dp, vertical = 3.dp),
                 )
             }
             item.quote.airline?.let { airline ->
-                Text(text = airline, color = TextSecondary, fontSize = 11.sp)
+                Text(text = airline, color = FlightDealTheme.colors.textSecondary, fontSize = 11.sp)
             }
             itineraryLabel(item.quote.transfers, item.quote.outboundMinutes)?.let { label ->
                 Text(
                     text = label,
                     // 경유는 오류가 아니라 정보지만, 직항보다는 눈에 띄어야 예약 페이지에서
-                    // 놀라지 않는다. PriceUp(빨강)은 가격 상승 전용이라 쓰지 않는다.
-                    color = if ((item.quote.transfers ?: 0) > 0) TextPrimary else TextSecondary,
+                    // 놀라지 않는다. priceUp(빨강)은 가격 상승 전용이라 쓰지 않는다.
+                    color = if ((item.quote.transfers ?: 0) > 0) FlightDealTheme.colors.textPrimary else FlightDealTheme.colors.textSecondary,
                     fontSize = 11.sp,
                 )
             }
             if (!hasBookingLink) {
-                Text(text = "예약처 연결 없음", color = TextSecondary, fontSize = 11.sp)
+                Text(text = "예약처 연결 없음", color = FlightDealTheme.colors.textSecondary, fontSize = 11.sp)
             }
         }
 
@@ -93,14 +89,14 @@ fun DealCard(
         ) {
             Text(
                 text = formatWon(item.quote.price),
-                color = TextPrimary,
+                color = FlightDealTheme.colors.textPrimary,
                 fontSize = 21.sp,
                 fontWeight = FontWeight.Bold,
             )
             item.originalPrice?.let { original ->
                 Text(
                     text = formatWon(original),
-                    color = TextSecondary,
+                    color = FlightDealTheme.colors.textSecondary,
                     fontSize = 12.sp,
                     textDecoration = TextDecoration.LineThrough,
                 )
@@ -110,12 +106,12 @@ fun DealCard(
 
             Text(
                 text = "추적",
-                color = Indigo,
+                color = FlightDealTheme.colors.indigo,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     // 같은 카드 안의 할인 배지와 같은 색이라 테두리로 눌리는 것임을 알린다.
-                    .border(1.dp, Indigo, RoundedCornerShape(20.dp))
+                    .border(1.dp, FlightDealTheme.colors.indigo, RoundedCornerShape(20.dp))
                     .clickable(onClick = onTrack)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
