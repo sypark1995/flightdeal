@@ -396,7 +396,8 @@ data class TrackedRouteEntity(
     val originIata: String,
     val destinationIata: String,
     val departDate: String,
-    val returnDate: String?,
+    /** 편도는 빈 문자열. NULL로 두면 유니크 인덱스가 편도 중복을 못 잡는다. */
+    val returnDate: String,
     val tripType: String,
     val targetPrice: Int?,
     val createdAt: Long,
@@ -624,7 +625,7 @@ class DaoTest {
         originIata = "ICN",
         destinationIata = destination,
         departDate = "2026-10-12",
-        returnDate = "2026-10-16",
+        returnDate = "2026-10-16",  // 편도는 빈 문자열
         tripType = "ROUND_TRIP",
         targetPrice = 280_000,
         createdAt = 1_800_000_000L,
@@ -1057,7 +1058,7 @@ class RoomTrackedRouteRepository(
             destination = Airport(destinationIata, AirportNames.cityOf(destinationIata), ""),
         ),
         departDate = LocalDate.parse(departDate),
-        returnDate = returnDate?.let(LocalDate::parse),
+        returnDate = returnDate.takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
         tripType = TripType.valueOf(tripType),
         targetPrice = targetPrice?.let(::Won),
             createdAt = Instant.ofEpochSecond(createdAt),
@@ -2746,8 +2747,37 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 ```
 
 `androidx.room.OnConflictStrategy` import를 추가한다.
-`returnDate IS :returnDate`를 쓰는 이유는 `= NULL`이 SQLite에서 항상 거짓이기 때문이다.
-편도는 `returnDate`가 null이므로 `=`로는 영영 매칭되지 않는다.
+
+**편도의 귀국일을 `NULL`로 저장하면 안 된다.** SQLite의 유니크 인덱스는 `NULL`을 서로 다른
+값으로 취급한다. 편도 두 건은 `returnDate`가 둘 다 `NULL`이어도 충돌하지 않으므로
+`IGNORE`가 발동하지 않고, 중복이 그대로 쌓인다. 왕복만 막히고 편도는 조용히 샌다.
+
+그래서 엔티티의 `returnDate`를 **널 불가 `String`으로 바꾸고 편도는 빈 문자열을 저장한다.**
+도메인 모델은 `LocalDate?`를 그대로 쓰고, 변환은 저장소 한 곳에서만 한다.
+
+`TrackedRouteEntity`:
+
+```kotlin
+    /** 편도는 빈 문자열이다. NULL로 두면 유니크 인덱스가 편도 중복을 못 잡는다. */
+    val returnDate: String,
+```
+
+`findId`의 조건도 평범한 `=`로 돌아간다.
+
+```kotlin
+    @Query(
+        "SELECT id FROM tracked_route WHERE originIata = :origin " +
+            "AND destinationIata = :destination AND departDate = :departDate " +
+            "AND returnDate = :returnDate AND tripType = :tripType LIMIT 1"
+    )
+    suspend fun findId(
+        origin: String,
+        destination: String,
+        departDate: String,
+        returnDate: String,
+        tripType: String,
+    ): Long?
+```
 
 **저장소가 이미 있으면 그 id를 돌려준다.** `add`의 마지막을 바꾼다.
 
@@ -2757,7 +2787,8 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
             originIata = route.origin.iata,
             destinationIata = route.destination.iata,
             departDate = departDate.toString(),
-            returnDate = returnDate?.toString(),
+            // 편도는 빈 문자열. NULL이면 유니크 인덱스가 편도 중복을 놓친다.
+            returnDate = returnDate?.toString().orEmpty(),
             tripType = tripType.name,
             targetPrice = targetPrice?.amount,
             createdAt = clock.instant().epochSecond,
@@ -2810,7 +2841,8 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
         val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
         val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
 
-        // SQLite에서 `= NULL`은 항상 거짓이다. IS를 안 쓰면 편도는 중복 검사를 빠져나간다.
+        // SQLite의 유니크 인덱스는 NULL을 서로 다른 값으로 본다.
+        // 편도의 귀국일을 NULL로 저장하면 중복이 그대로 쌓인다.
         assertEquals(first, second)
         assertEquals(1, tracked.observeAll().first().size)
     }
