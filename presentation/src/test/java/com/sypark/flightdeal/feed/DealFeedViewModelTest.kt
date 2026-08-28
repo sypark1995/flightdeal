@@ -311,15 +311,107 @@ class DealFeedViewModelTest {
             trackRoute = TrackRouteUseCase(routes, NoopHistory()),
         )
         advanceUntilIdle()
-        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
 
         viewModel.setTripType(TripType.ONE_WAY)
         advanceUntilIdle()
+        // 전환이 끝난 뒤 화면이 실제로 보여주는 딜을 잡는다 — 전환 전에 잡아두면
+        // 여전히 왕복 견적을 들고 있어, 이 테스트가 검증하려는 "화면과 등록이
+        // 일치하는지"가 아니라 다른 것(추적 중 화면이 바뀌는 경우, 아래 별도
+        // 테스트가 다룬다)을 검증하게 된다.
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
         viewModel.track(deal)
         advanceUntilIdle()
 
         // 화면이 편도를 보여주는데 왕복으로 등록되면 이후 비교가 전부 어긋난다.
         assertEquals(TripType.ONE_WAY, routes.lastTripType)
+    }
+
+    /**
+     * 첫 호출은 즉시(라고 봐도 될 만큼 짧게) 끝나고, 이후 호출은 [pendingDelayMs]만큼
+     * 걸린다. 조회 중인 상태를 만들어두고 그 사이 [track]을 호출하는 테스트 전용이다.
+     */
+    private inner class SwitchableTripTypeRepository(
+        var pendingDelayMs: Long = 1_000L,
+    ) : FlightPriceRepository {
+        var calls = 0
+            private set
+
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> {
+            val isFirstCall = ++calls == 1
+            if (!isFirstCall) delay(pendingDelayMs)
+            val roundTrip = quote(189_000).copy(returnDate = LocalDate.of(2026, 10, 19))
+            val q = if (tripType == TripType.ONE_WAY) roundTrip.copy(returnDate = null) else roundTrip
+            return AppResult.Success(listOf(q))
+        }
+
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
+            AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
+    }
+
+    @Test
+    fun `조회 중에 추적하면 화면의 견적이 실제로 어떤 종류인지로 등록한다`() = runTest {
+        val repo = SwitchableTripTypeRepository()
+        val routes = RecordingTrackedRoutes()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repo, CalculateDiscountUseCase()),
+            TrackRouteUseCase(routes, NoopHistory()),
+        )
+        // 첫 조회(왕복)를 끝까지 진행시켜 화면에 왕복 카드가 뜨게 한다.
+        advanceUntilIdle()
+        val displayedDeal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+        // 화면에 남아 있는 카드는 실제로 왕복 견적이어야 한다 — 이 테스트의 전제다.
+        assertTrue(displayedDeal.quote.returnDate != null)
+
+        // 편도로 토글한다. 토글은 즉시 바뀌지만, 조회가 오래 걸려 화면에는
+        // 여전히 위에서 잡아둔 왕복 카드가 그대로 남아 있다.
+        viewModel.setTripType(TripType.ONE_WAY)
+        advanceTimeBy(100)
+        assertEquals(TripType.ONE_WAY, viewModel.tripType.value)
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+
+        // 조회가 끝나기 전에, 아직 화면에 떠 있는 왕복 카드를 추적한다.
+        viewModel.track(displayedDeal)
+        advanceUntilIdle()
+
+        // 토글은 이미 편도지만, 실제로 추적한 카드는 왕복 견적이었다.
+        assertEquals(TripType.ROUND_TRIP, routes.lastTripType)
+    }
+
+    @Test
+    fun `연속으로 토글한 뒤 실패하면 화면의 데이터에 맞는 종류로 되돌린다`() = runTest {
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+        // 왕복으로 성공한 목록이 화면에 떠 있다.
+        advanceUntilIdle()
+        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
+
+        // 편도로 눌렀다가, 그 요청이 끝나기 전에 다시 왕복으로 누른다. 이후 요청은
+        // 계속 실패한다 — 화면에 남은 목록은 처음의 왕복 그대로다.
+        repository.nextResult = AppResult.NetworkError(IOException())
+        viewModel.setTripType(TripType.ONE_WAY)
+        viewModel.setTripType(TripType.ROUND_TRIP)
+        advanceUntilIdle()
+
+        // "마지막으로 탭한 값 이전"(편도)이 아니라, 화면에 실제로 남아 있는
+        // 데이터의 종류(왕복)로 되돌아가야 한다.
+        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
     }
 
     @Test
