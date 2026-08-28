@@ -1587,7 +1587,7 @@ git commit -m "feat: 딜 카드에서 노선을 추적 등록"
 - Test: `presentation/src/test/java/com/sypark/flightdeal/tracking/TrackingViewModelTest.kt`
 
 **Interfaces:**
-- Consumes: `TrackedRouteRepository`, `PriceHistoryRepository`, `UntrackRouteUseCase`, `DetectPriceChangesUseCase`
+- Consumes: `TrackedRouteRepository`, `PriceHistoryRepository`, `UntrackRouteUseCase`
 - Produces:
   - `TrackedItem(tracked: TrackedRoute, latest: PriceSnapshot?, previous: PriceSnapshot?)`
   - `TrackingUiState` — `Loading` / `Empty` / `Success(items: List<TrackedItem>)`
@@ -2025,7 +2025,7 @@ fun TrackingScreen(
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 45, `:data` 80, `:presentation` 19(15+4).
+기대: `:domain` 45, `:data` 80, `:presentation` 20(16+4).
 
 ```bash
 git add presentation
@@ -2644,7 +2644,7 @@ class FlightDealApp : Application(), Configuration.Provider {
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 53, `:data` 80, `:presentation` 19. BUILD SUCCESSFUL.
+기대: `:domain` 53, `:data` 80, `:presentation` 20. BUILD SUCCESSFUL.
 
 - [ ] **Step 11: 에뮬레이터에서 확인**
 
@@ -2974,7 +2974,7 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - [ ] `:domain`에 안드로이드 타입도 Travelpayouts라는 단어도 없다
 - [ ] `.java` 파일이 하나도 없다
 - [ ] 같은 노선을 두 번 등록해도 하나만 남는다
-- [ ] 전체 테스트 통과. `:domain` 53, `:data` 80, `:presentation` 19
+- [ ] 전체 테스트 통과. `:domain` 53, `:data` 80, `:presentation` 20
 
 ## 다음 계획서
 
