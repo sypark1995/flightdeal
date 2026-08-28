@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -137,11 +138,16 @@ class DealFeedViewModelTest {
     }
 
     @Test
-    fun `재시도를 연타하면 마지막 요청 결과만 반영된다`() = runTest {
+    fun `재시도를 연타하면 이전 요청은 취소되고 마지막 결과만 반영된다`() = runTest {
         val repo = SlowFirstRepository()
         val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()))
 
-        // init이 시작한 느린 첫 요청을 두 번째 요청이 대체해야 한다.
+        // 첫 요청이 실제로 시작되어 응답을 기다리는 상태까지 진행시킨다.
+        // 이 단계를 빼면 첫 작업이 디스패치 전에 취소되어 조회가 한 번만 일어난다.
+        advanceTimeBy(100)
+        assertEquals(1, repo.calls)
+
+        // 진행 중이던 첫 요청은 여기서 버려진다.
         viewModel.refresh()
         advanceUntilIdle()
 
