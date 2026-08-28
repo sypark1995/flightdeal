@@ -291,6 +291,25 @@ class DealFeedViewModelTest {
         assertEquals(TripType.ONE_WAY, routes.lastTripType)
     }
 
+    @Test
+    fun `여정 종류를 바꾸지 않으면 왕복으로 등록한다`() = runTest {
+        val routes = RecordingTrackedRoutes()
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(
+                FakeFlightPriceRepository(), CalculateDiscountUseCase()
+            ),
+            trackRoute = TrackRouteUseCase(routes, NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        viewModel.track(deal)
+        advanceUntilIdle()
+
+        // 이 테스트가 없으면 항상 ONE_WAY를 넘기는 구현도 통과한다.
+        assertEquals(TripType.ROUND_TRIP, routes.lastTripType)
+    }
+
     private class RecordingTrackedRoutes : TrackedRouteRepository {
         var lastTripType: TripType? = null
 

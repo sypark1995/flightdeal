@@ -97,9 +97,10 @@ fun DealCard(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
-                    .background(IndigoSubtle, RoundedCornerShape(20.dp))
+                    // 같은 카드 안의 할인 배지와 같은 색이라 테두리로 눌리는 것임을 알린다.
+                    .border(1.dp, Indigo, RoundedCornerShape(20.dp))
                     .clickable(onClick = onTrack)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         }
     }
