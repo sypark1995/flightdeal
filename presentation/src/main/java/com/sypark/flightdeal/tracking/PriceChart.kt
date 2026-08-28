@@ -2,7 +2,7 @@ package com.sypark.flightdeal.tracking
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -53,17 +53,27 @@ fun PriceChart(
 
     val geometry = PriceChartGeometry.of(snapshots, targetPrice)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(120.dp),
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        // 눈금은 그래프 위에 겹쳐 놓지 않는다. 선이 축 끝에 닿으면 글자와 겹쳐
+        // 둘 다 못 읽게 된다 — 값이 가장 높거나 낮은 지점이 바로 그 자리다.
+        Text(
+            text = if (geometry.scaleHigh == geometry.scaleLow) {
+                "${formatWon(geometry.scaleLow)} 그대로"
+            } else {
+                "최고 ${formatWon(geometry.scaleHigh)} · 최저 ${formatWon(geometry.scaleLow)}"
+            },
+            color = TextSecondary,
+            fontSize = 11.sp,
+        )
+
         Canvas(
             modifier = Modifier
-                .fillMaxSize()
-                // 선 굵기가 위아래로 잘리지 않도록 여백을 준다. 기하 계산 자체는
-                // 0..1 순수 좌표로 남겨두고, 픽셀 여백은 그리는 쪽에서만 처리한다.
-                .padding(vertical = 4.dp),
+                .fillMaxWidth()
+                .height(112.dp)
+                // 선 굵기와 마지막 점의 원이 잘리지 않도록 여백을 준다. 가로 여백이
+                // 없으면 x=0과 x=1의 점이 정확히 경계에 놓여 절반이 잘려 나간다.
+                // 기하 계산 자체는 0..1 순수 좌표로 남겨두고, 픽셀 여백은 여기서만 다룬다.
+                .padding(horizontal = 5.dp, vertical = 6.dp),
         ) {
             val w = size.width
             val h = size.height
@@ -95,18 +105,5 @@ fun PriceChart(
             val last = toOffset(geometry.points.last())
             drawCircle(color = Indigo, radius = 3.dp.toPx(), center = last)
         }
-
-        Text(
-            text = formatWon(geometry.scaleHigh),
-            color = TextSecondary,
-            fontSize = 11.sp,
-            modifier = Modifier.align(Alignment.TopStart),
-        )
-        Text(
-            text = formatWon(geometry.scaleLow),
-            color = TextSecondary,
-            fontSize = 11.sp,
-            modifier = Modifier.align(Alignment.BottomStart),
-        )
     }
 }
