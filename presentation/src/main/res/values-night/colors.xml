@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Color.kt의 DarkPalette.background와 반드시 같은 값이어야 한다. -->
+    <color name="window_background">#FF101114</color>
+</resources>

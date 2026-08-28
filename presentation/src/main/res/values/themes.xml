@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- windowBackground를 Compose의 LightPalette.background와 맞춘다. 맞추지 않으면
+         콜드 스타트와(안드로이드 12+에서는) 시스템 스플래시가 Compose 첫 프레임 전까지
+         이 색으로 보인다 — 다크 모드에서 흰 배경이 번쩍이는 원인이 바로 이 틈이다. -->
+    <style name="Theme.FlightDeal" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:colorBackground">@color/window_background</item>
+    </style>
+</resources>
