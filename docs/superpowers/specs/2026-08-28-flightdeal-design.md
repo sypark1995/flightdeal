@@ -62,10 +62,10 @@ UI에 "참고가"임을 명시하고, 정확한 가격은 딥링크로 연결된
 | 로컬 DB | Room | 동일 |
 | 설정 저장 | DataStore Preferences | 동일 |
 | 목록 | Paging 3 | **제외** (§3.1) |
-| 화면 전환 | Navigation Component + SafeArgs | 동일 |
-| UI | XML DataBinding + ViewBinding | 동일 |
+| 화면 전환 | Navigation Component + SafeArgs | **Navigation Compose** |
+| UI | XML DataBinding + ViewBinding | **Jetpack Compose + Material 3** (§3.3) |
 | 백그라운드 | WorkManager | 동일 |
-| 이미지 | Glide | 동일 |
+| 이미지 | Glide | **Coil** (Compose용) |
 | 비동기 | Coroutines + RxJava3 혼용 | **Coroutines/Flow로 통일, RxJava 제거** |
 | 어노테이션 처리 | kapt | **KSP** |
 | 의존성 선언 | build.gradle 하드코딩 | **Version Catalog (libs.versions.toml)** |
@@ -83,19 +83,38 @@ RxJava를 제거하는 이유: `hey_ticket`에서 Coroutines와 RxJava3가 같�
   그때 추가한다.
 - **material-calendarview.** `hey_ticket`이 쓰던
   `com.github.prolificinteractive:material-calendarview`는 오래 갱신되지 않았다.
-  날짜별 최저가 히트맵은 `kizitonwose/Calendar`(View 버전)로 구현한다.
+  날짜별 최저가 히트맵은 `kizitonwose/Calendar`의 **Compose 버전**으로 구현한다.
+- **Shimmer 라이브러리.** 로딩 스켈레톤은 Compose의 `rememberInfiniteTransition`으로
+  25줄 안에 직접 그린다. View 전용 의존성을 하나 들이지 않아도 된다.
 
 ### 3.2 추가하는 것
 
 - **Chrome Custom Tabs** (`androidx.browser`) — 제휴 예약처 딥링크
 - **가격 추이 그래프는 라이브러리를 쓰지 않는다.** 30개 남짓한 점을 잇는 스파크라인
-  하나뿐이라 차트 라이브러리를 통째로 들이는 것은 과하다. 커스텀 `View`에서
-  `Path`로 직접 그린다.
+  하나뿐이라 차트 라이브러리를 통째로 들이는 것은 과하다. Compose `Canvas`의
+  `drawPath`로 직접 그린다.
+
+### 3.3 XML DataBinding에서 Compose로
+
+1단계 구현 중에 UI 계층을 Compose로 바꿨다. 셋이 한꺼번에 터졌고 원인이 하나였다.
+
+1. Kotlin `@BindingAdapter` 함수를 DataBinding 컴파일러가 발견하지 못한다. 바이트코드에
+   메서드와 어노테이션이 다 있는데도 `Cannot find a setter`가 난다. 번들된
+   `kotlinx-metadata-jvm`이 Kotlin 2.1(K2) 메타데이터를 못 읽는 것으로 보인다.
+2. `Won`이 `@JvmInline value class`라 JVM 게터 이름이 뒤섞인다(`getPrice-XXXXXXX`).
+   XML 표현식은 이 접근자를 해석하지 못한다.
+3. 우회하려면 Java 파일이 필요하다.
+
+Compose에서는 셋 다 존재하지 않는다. 화면이 Kotlin 함수이므로 value class도 어노테이션
+처리도 접근자 이름 해석도 개입하지 않는다. **프로젝트에 Java 소스를 두지 않는다.**
+
+이 전환으로 `:domain`과 `:data`는 한 줄도 바뀌지 않았고, `DealFeedViewModel`과 그 테스트도
+그대로 살아남았다. `StateFlow`를 노출할 뿐이라 뷰 계층이 무엇이든 상관없었다.
 
 ## 4. 모듈 구조
 
 ```
-:presentation   → :domain, :data     앱 모듈. Fragment / ViewModel / XML DataBinding
+:presentation   → :domain, :data     앱 모듈. Composable / ViewModel / Navigation Compose
 :data           → :domain            Travelpayouts API, Room, DataStore, Repository 구현체
 :domain         (의존성 없음)          모델, Repository 인터페이스, UseCase
 ```
@@ -225,6 +244,11 @@ Hilt qualifier로 빌드 배리언트에서 주입 대상을 전환한다. 이 �
 `buildConfigField`로 주입한다. `hey_ticket`이 `KAKAO_API_KEY`, `KOPIS_SERVICE_KEY`를
 다루던 방식과 동일하다. `local.properties`는 커밋하지 않는다.
 
+**선언 위치는 `:data`다.** 키를 쓰는 것은 `:data`의 Repository 구현체인데, `:data`는
+`:presentation`을 의존하지 않으므로(그리고 의존해서도 안 되므로) `:presentation`의
+`BuildConfig`를 읽을 수 없다. 키를 앱 모듈에 두면 §6.1의 "구현체만 교체하면 된다"는
+전제가 깨진다.
+
 ## 7. 가격 추적 엔진
 
 ```
@@ -273,17 +297,17 @@ Android 13(API 33) 이상은 `POST_NOTIFICATIONS` 런타임 권한이 필요하�
 
 ## 8. 화면
 
-4탭 / 7 Fragment.
+4탭 / 7화면. 단일 `ComponentActivity` + Navigation Compose. Fragment를 쓰지 않는다.
 
-| 탭 | Fragment | 내용 |
+| 탭 | Composable | 내용 |
 |---|---|---|
-| 특가 | `DealFeedFragment` | 홈. 특가 카드 피드 |
-| 추적 | `TrackedListFragment` | 추적 노선 목록 + 어제 대비 변동 |
-| | `TrackedDetailFragment` | 30일 가격 추이 그래프, 목표가 설정 |
-| 검색 | `SearchFragment` | 출발/도착/날짜 선택 |
-| | `PriceCalendarFragment` | 날짜별 최저가 달력 (히트맵) |
-| | `ExploreFragment` | 예산 필터 목적지 탐색 |
-| 내정보 | `SettingsFragment` | 기본 출발지, 알림 설정 |
+| 특가 | `DealFeedScreen` | 홈. 특가 카드 피드 |
+| 추적 | `TrackedListScreen` | 추적 노선 목록 + 어제 대비 변동 |
+| | `TrackedDetailScreen` | 30일 가격 추이 그래프, 목표가 설정 |
+| 검색 | `SearchScreen` | 출발/도착/날짜 선택 |
+| | `PriceCalendarScreen` | 날짜별 최저가 달력 (히트맵) |
+| | `ExploreScreen` | 예산 필터 목적지 탐색 |
+| 내정보 | `SettingsScreen` | 기본 출발지, 알림 설정 |
 
 딜 카드를 누르면 **Chrome Custom Tabs**로 제휴 예약처에 연결한다.
 
@@ -293,7 +317,7 @@ Android 13(API 33) 이상은 `POST_NOTIFICATIONS` 런타임 권한이 필요하�
 
 | 상태 | 표현 |
 |---|---|
-| 로딩 | Shimmer (`hey_ticket`에서 사용하던 것) |
+| 로딩 | Compose `rememberInfiniteTransition`으로 직접 그린 스켈레톤 |
 | 성공 | 콘텐츠 |
 | 빈 데이터 | "이 노선은 아직 가격 데이터가 없어요" — 오류가 아님을 분명히 |
 | 네트워크 오류 | 마지막 캐시 데이터를 그대로 표시하고 스낵바로만 알림 |
