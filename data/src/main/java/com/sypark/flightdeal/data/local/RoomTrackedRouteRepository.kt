@@ -31,17 +31,33 @@ class RoomTrackedRouteRepository(
         returnDate: LocalDate?,
         tripType: TripType,
         targetPrice: Won?,
-    ): Long = dao.insert(
-        TrackedRouteEntity(
+    ): Long {
+        val entity = TrackedRouteEntity(
             originIata = route.origin.iata,
             destinationIata = route.destination.iata,
             departDate = departDate.toString(),
-            returnDate = returnDate?.toString(),
+            // 편도는 빈 문자열. NULL이면 유니크 인덱스가 편도 중복을 놓친다.
+            returnDate = returnDate?.toString().orEmpty(),
             tripType = tripType.name,
             targetPrice = targetPrice?.amount,
             createdAt = clock.instant().epochSecond,
         )
-    )
+
+        val inserted = dao.insert(entity)
+        // 이미 추적 중이면 새로 만들지 않고 그것의 id를 돌려준다.
+        // 등록을 멱등하게 두면 버튼을 두 번 눌러도 카드가 하나만 남는다.
+        return if (inserted != -1L) {
+            inserted
+        } else {
+            dao.findId(
+                origin = entity.originIata,
+                destination = entity.destinationIata,
+                departDate = entity.departDate,
+                returnDate = entity.returnDate,
+                tripType = entity.tripType,
+            ) ?: error("중복이라 했는데 찾을 수 없다")
+        }
+    }
 
     override suspend fun remove(id: Long) = dao.deleteById(id)
 
@@ -61,7 +77,7 @@ class RoomTrackedRouteRepository(
                 destination = Airport(destinationIata, AirportNames.cityOf(destinationIata), ""),
             ),
             departDate = LocalDate.parse(departDate),
-            returnDate = returnDate?.let(LocalDate::parse),
+            returnDate = returnDate.takeIf { it.isNotEmpty() }?.let(LocalDate::parse),
             tripType = TripType.valueOf(tripType),
             targetPrice = targetPrice?.let(::Won),
             createdAt = Instant.ofEpochSecond(createdAt),

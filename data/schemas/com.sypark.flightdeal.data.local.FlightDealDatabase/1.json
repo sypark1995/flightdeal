@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "ec5854e6de92e28777bef5a8326b83a3",
+    "identityHash": "5e26a5676fadeebe82a318bae827b6df",
     "entities": [
       {
         "tableName": "tracked_route",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `originIata` TEXT NOT NULL, `destinationIata` TEXT NOT NULL, `departDate` TEXT NOT NULL, `returnDate` TEXT, `tripType` TEXT NOT NULL, `targetPrice` INTEGER, `createdAt` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `originIata` TEXT NOT NULL, `destinationIata` TEXT NOT NULL, `departDate` TEXT NOT NULL, `returnDate` TEXT NOT NULL, `tripType` TEXT NOT NULL, `targetPrice` INTEGER, `createdAt` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -36,7 +36,7 @@
             "fieldPath": "returnDate",
             "columnName": "returnDate",
             "affinity": "TEXT",
-            "notNull": false
+            "notNull": true
           },
           {
             "fieldPath": "tripType",
@@ -63,7 +63,21 @@
             "id"
           ]
         },
-        "indices": [],
+        "indices": [
+          {
+            "name": "index_tracked_route_originIata_destinationIata_departDate_returnDate_tripType",
+            "unique": true,
+            "columnNames": [
+              "originIata",
+              "destinationIata",
+              "departDate",
+              "returnDate",
+              "tripType"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tracked_route_originIata_destinationIata_departDate_returnDate_tripType` ON `${TABLE_NAME}` (`originIata`, `destinationIata`, `departDate`, `returnDate`, `tripType`)"
+          }
+        ],
         "foreignKeys": []
       },
       {
@@ -136,7 +150,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ec5854e6de92e28777bef5a8326b83a3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5e26a5676fadeebe82a318bae827b6df')"
     ]
   }
 }

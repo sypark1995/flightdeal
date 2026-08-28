@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Before
@@ -172,7 +173,7 @@ class RoomTrackedRouteRepositoryTest {
                 originIata = "ICN",
                 destinationIata = "BKK",
                 departDate = "not-a-date",
-                returnDate = null,
+                returnDate = "",
                 tripType = "ROUND_TRIP",
                 targetPrice = null,
                 createdAt = 1_800_000_000L,
@@ -183,5 +184,45 @@ class RoomTrackedRouteRepositoryTest {
         val saved = tracked.observeAll().first()
         assertEquals(1, saved.size)
         assertEquals(good, saved.single().id)
+    }
+
+    @Test
+    fun `같은 노선을 두 번 등록해도 하나만 남는다`() = runTest {
+        val first = addTokyo()
+        val second = addTokyo()
+
+        // 두 번 누르면 카드가 두 장 뜨고 알림도 두 번 간다.
+        assertEquals(first, second)
+        assertEquals(1, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `여정 종류가 다르면 따로 등록된다`() = runTest {
+        val roundTrip = addTokyo(TripType.ROUND_TRIP)
+        val oneWay = addTokyo(TripType.ONE_WAY)
+
+        // 왕복과 편도는 가격대가 다르다. 별개의 추적이다.
+        assertNotEquals(roundTrip, oneWay)
+        assertEquals(2, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `귀국일이 없는 편도끼리도 중복으로 잡힌다`() = runTest {
+        val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+        val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+
+        // SQLite의 유니크 인덱스는 NULL을 서로 다른 값으로 본다.
+        // 편도의 귀국일을 NULL로 저장하면 중복이 그대로 쌓인다.
+        assertEquals(first, second)
+        assertEquals(1, tracked.observeAll().first().size)
+    }
+
+    @Test
+    fun `편도로 등록하면 귀국일이 null로 돌아온다`() = runTest {
+        tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+
+        // 저장은 빈 문자열이지만 도메인은 null이어야 한다. 빈 문자열이 새어 나가면
+        // 화면이 "편도"인데 귀국일 자리에 빈칸이 생긴다.
+        assertNull(tracked.observeAll().first().single().returnDate)
     }
 }

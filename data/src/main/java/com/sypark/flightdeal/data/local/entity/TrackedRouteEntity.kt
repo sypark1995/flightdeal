@@ -1,6 +1,7 @@
 package com.sypark.flightdeal.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -11,13 +12,22 @@ import androidx.room.PrimaryKey
  * @param tripType [com.sypark.flightdeal.domain.model.TripType]의 `name`
  * @param createdAt epoch second
  */
-@Entity(tableName = "tracked_route")
+@Entity(
+    tableName = "tracked_route",
+    indices = [
+        Index(
+            value = ["originIata", "destinationIata", "departDate", "returnDate", "tripType"],
+            unique = true,
+        ),
+    ],
+)
 data class TrackedRouteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val originIata: String,
     val destinationIata: String,
     val departDate: String,
-    val returnDate: String?,
+    /** 편도는 빈 문자열. NULL로 두면 유니크 인덱스가 편도 중복을 못 잡는다. */
+    val returnDate: String,
     val tripType: String,
     val targetPrice: Int?,
     val createdAt: Long,

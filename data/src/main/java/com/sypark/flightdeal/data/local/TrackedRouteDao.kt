@@ -2,6 +2,7 @@ package com.sypark.flightdeal.data.local
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
@@ -17,8 +18,22 @@ interface TrackedRouteDao {
     @Query("SELECT * FROM tracked_route")
     suspend fun getAll(): List<TrackedRouteEntity>
 
-    @Insert
+    /** 이미 있으면 -1을 돌려준다. 중복 등록은 오류가 아니라 "이미 추적 중"이다. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entity: TrackedRouteEntity): Long
+
+    @Query(
+        "SELECT id FROM tracked_route WHERE originIata = :origin " +
+            "AND destinationIata = :destination AND departDate = :departDate " +
+            "AND returnDate = :returnDate AND tripType = :tripType LIMIT 1"
+    )
+    suspend fun findId(
+        origin: String,
+        destination: String,
+        departDate: String,
+        returnDate: String,
+        tripType: String,
+    ): Long?
 
     @Update
     suspend fun update(entity: TrackedRouteEntity)

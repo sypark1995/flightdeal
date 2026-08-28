@@ -32,7 +32,11 @@ class TrackRouteUseCaseTest {
     )
 
     private class FakeTrackedRoutes : TrackedRouteRepository {
-        val added = mutableListOf<TripType>()
+        var lastRoute: Route? = null
+        var lastDepartDate: LocalDate? = null
+        var lastReturnDate: LocalDate? = null
+        var lastTripType: TripType? = null
+        var lastTargetPrice: Won? = null
         var removed: Long? = null
 
         override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
@@ -44,7 +48,11 @@ class TrackRouteUseCaseTest {
             tripType: TripType,
             targetPrice: Won?,
         ): Long {
-            added += tripType
+            lastRoute = route
+            lastDepartDate = departDate
+            lastReturnDate = returnDate
+            lastTripType = tripType
+            lastTargetPrice = targetPrice
             return 42L
         }
         override suspend fun remove(id: Long) { removed = id }
@@ -99,7 +107,21 @@ class TrackRouteUseCaseTest {
 
         useCase(quote, TripType.ONE_WAY)
 
-        assertEquals(listOf(TripType.ONE_WAY), routes.added)
+        assertEquals(TripType.ONE_WAY, routes.lastTripType)
+    }
+
+    @Test
+    fun `시세의 노선과 날짜, 목표가를 그대로 넘긴다`() = runTest {
+        val routes = FakeTrackedRoutes()
+        val useCase = TrackRouteUseCase(routes, FakeHistory())
+
+        useCase(quote, TripType.ROUND_TRIP, targetPrice = Won(280_000))
+
+        assertEquals(quote.route, routes.lastRoute)
+        assertEquals(quote.departDate, routes.lastDepartDate)
+        assertEquals(quote.returnDate, routes.lastReturnDate)
+        // 목표가는 목표 도달 알림의 근거다. 흘리면 알림이 영영 안 온다.
+        assertEquals(Won(280_000), routes.lastTargetPrice)
     }
 
     @Test
