@@ -45,15 +45,16 @@ object FakeDealFixtures {
     fun monthlyPrices(route: Route, month: YearMonth): List<PriceQuote> {
         val base = DESTINATIONS.firstOrNull { it.first.iata == route.destination.iata }?.second
             ?: return emptyList()
+        val seed = route.destination.iata.sumOf { it.code }
         return (1..month.lengthOfMonth()).map { day ->
             val departDate = month.atDay(day)
             PriceQuote(
                 route = route,
                 departDate = departDate,
                 returnDate = departDate.plusDays(4),
-                // 특가(base)의 1.2배 ~ 1.9배 사이에서 흔들리게 만든다. 중앙값은 약 1.53배가 되어
-                // 특가에 35% 안팎의 할인 배지가 붙는다.
-                price = Won(base * (120 + (day * 27) % 70) / 100),
+                // 노선마다 다른 seed를 섞어 흔들리게 만든다. day만으로 계산하면 모든 노선의
+                // 할인율이 똑같아진다.
+                price = Won(base * (110 + (day * 27 + seed) % 80) / 100),
                 airline = AIRLINES[day % AIRLINES.size],
                 foundAt = Instant.parse("2026-08-28T00:00:00Z"),
                 deepLink = "https://example.com/booking/${route.destination.iata}/$day",
