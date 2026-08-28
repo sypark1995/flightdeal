@@ -3,6 +3,7 @@ package com.sypark.flightdeal
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import com.sypark.flightdeal.ui.FlightDealNavHost
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -12,6 +13,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             FlightDealTheme {
                 FlightDealNavHost()

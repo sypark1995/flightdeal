@@ -2,6 +2,7 @@ package com.sypark.flightdeal.feed
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,20 +58,34 @@ fun DealFeedScreen(
                 .padding(horizontal = 14.dp, vertical = 13.dp),
         )
 
-        // 로딩·빈 데이터·오류 상태는 Task 9에서 붙인다.
-        if (state is DealFeedUiState.Success) {
-            LazyColumn(
+        when (val current = state) {
+            DealFeedUiState.Loading -> DealSkeleton()
+
+            is DealFeedUiState.Success -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(
-                    items = (state as DealFeedUiState.Success).deals,
-                    key = { it.quote.route.destination.iata + it.quote.departDate },
+                    items = current.deals,
+                    key = { "${it.quote.route.destination.iata}/${it.quote.departDate}" },
                 ) { deal ->
                     DealCard(item = deal, onClick = { /* 딥링크는 이후 계획서에서 */ })
                 }
             }
+
+            DealFeedUiState.Empty -> FeedMessage(
+                title = "아직 특가가 없어요",
+                body = "가격 데이터가 모이면 여기에 보여드릴게요.",
+                // 빈 데이터는 오류가 아니다. 재시도해도 결과가 같으므로 버튼을 두지 않는다.
+                onRetry = null,
+            )
+
+            is DealFeedUiState.Error -> FeedMessage(
+                title = "가격을 불러오지 못했어요",
+                body = "네트워크를 확인하고 다시 시도해주세요.",
+                onRetry = if (current.retryable) viewModel::refresh else null,
+            )
         }
     }
 }

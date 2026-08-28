@@ -7,9 +7,6 @@ coroutines = "1.9.0"
 navigation = "2.8.5"
 lifecycle = "2.8.7"
 coreKtx = "1.15.0"
-appcompat = "1.7.0"
-material = "1.12.0"
-constraintlayout = "2.2.0"
 composeBom = "2025.06.00"
 activityCompose = "1.9.3"
 hiltNavigationCompose = "1.2.0"
@@ -18,17 +15,8 @@ junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
-androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
-androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "constraintlayout" }
-android-material = { module = "com.google.android.material:material", version.ref = "material" }
-
-androidx-fragment-ktx = { module = "androidx.fragment:fragment-ktx", version = "1.8.5" }
-androidx-activity-ktx = { module = "androidx.activity:activity-ktx", version = "1.9.3" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
-
-androidx-navigation-fragment = { module = "androidx.navigation:navigation-fragment-ktx", version.ref = "navigation" }
-androidx-navigation-ui = { module = "androidx.navigation:navigation-ui-ktx", version.ref = "navigation" }
 
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
