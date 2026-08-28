@@ -24,4 +24,11 @@ data class TrackedRoute(
      */
     val notifiedPrice: Won?,
     val createdAt: Instant,
-)
+) {
+    /**
+     * 출발일이 지났는가. 지난 여정은 더 조회하지 않는다 —
+     * 소스가 지난 날짜에 아무것도 주지 않아 매번 헛돌고, 화면에는 마지막 가격이
+     * 최신인 것처럼 남는다.
+     */
+    fun hasDeparted(today: LocalDate): Boolean = departDate.isBefore(today)
+}

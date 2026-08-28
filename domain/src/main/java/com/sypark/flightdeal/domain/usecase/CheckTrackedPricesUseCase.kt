@@ -10,6 +10,7 @@ import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import java.time.Clock
+import java.time.LocalDate
 import javax.inject.Inject
 
 /**
@@ -27,7 +28,12 @@ class CheckTrackedPricesUseCase @Inject constructor(
         // 이력은 계속 쌓인다. 조회하러 온 김에 치운다.
         history.pruneOlderThan(PRICE_HISTORY_RETENTION_DAYS)
 
-        return trackedRoutes.getAll().mapNotNull { tracked -> check(tracked) }
+        // 출발일이 지난 노선은 조회하지 않는다. 소스가 지난 날짜에 아무것도 주지
+        // 않아 매번 헛돌고 API 쿼터만 쓴다. 오늘 출발은 아직 탈 수 있으므로 남긴다.
+        val today = LocalDate.ofInstant(clock.instant(), clock.zone)
+        return trackedRoutes.getAll()
+            .filterNot { it.hasDeparted(today) }
+            .mapNotNull { tracked -> check(tracked) }
     }
 
     private suspend fun check(tracked: TrackedRoute): PriceChange? {
