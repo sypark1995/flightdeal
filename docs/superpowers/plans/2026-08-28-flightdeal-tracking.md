@@ -362,6 +362,16 @@ androidx-test-core = { module = "androidx.test:core", version = "1.7.0" }
     }
 ```
 
+`android { }` 바깥, 모듈 최상위에 스키마 출력 위치를 지정한다.
+
+```kotlin
+ksp {
+    // 스키마 JSON을 남겨야 나중에 마이그레이션 테스트가 기준선을 갖는다.
+    // 이걸 안 남기면 컬럼을 바꿀 때 "무엇에서 무엇으로"를 검증할 방법이 없다.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+```
+
 - [ ] **Step 2: 엔티티 작성**
 
 `data/src/main/java/com/sypark/flightdeal/data/local/entity/TrackedRouteEntity.kt`:
@@ -512,10 +522,16 @@ import androidx.room.RoomDatabase
 import com.sypark.flightdeal.data.local.entity.PriceSnapshotEntity
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 
+/**
+ * `exportSchema = true`로 둔다. 스키마 JSON이 있어야 나중에 컬럼을 바꿀 때
+ * 마이그레이션을 테스트할 수 있다. 없으면 두 갈래뿐이다 — 마이그레이션을 안 쓰고
+ * 앱이 열리자마자 크래시하거나, `fallbackToDestructiveMigration()`으로
+ * 사용자가 등록한 추적 노선과 이력을 통째로 조용히 지우거나.
+ */
 @Database(
     entities = [TrackedRouteEntity::class, PriceSnapshotEntity::class],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class FlightDealDatabase : RoomDatabase() {
     abstract fun trackedRouteDao(): TrackedRouteDao
@@ -678,6 +694,26 @@ class DaoTest {
     }
 
     @Test
+    fun `기준 시각과 정확히 같은 이력은 포함된다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 200))
+
+        // 조회는 >= 다. > 로 바뀌면 보관 기한과 같은 시각의 스냅샷이 그래프에서 사라진다.
+        assertEquals(1, snapshots.observeFor(id, sinceEpochSecond = 200).first().size)
+    }
+
+    @Test
+    fun `기준 시각과 정확히 같은 이력은 지워지지 않는다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 200))
+
+        snapshots.deleteOlderThan(epochSecond = 200)
+
+        // 삭제는 < 다. <= 로 바뀌면 조회 조건(>=)과 겹쳐 한 주기 일찍 사라진다.
+        assertEquals(1, snapshots.observeFor(id, sinceEpochSecond = 0).first().size)
+    }
+
+    @Test
     fun `다른 노선의 이력은 섞이지 않는다`() = runTest {
         val tokyo = routes.insert(route("TYO"))
         val bangkok = routes.insert(route("BKK"))
@@ -695,7 +731,7 @@ class DaoTest {
 ./gradlew :data:testDebugUnitTest --tests "*DaoTest*"
 ```
 
-기대: PASS (7건).
+기대: PASS (9건).
 
 `추적을 해제하면 이력도 함께 사라진다`가 실패하면 외래키 강제가 걸리지 않은 것이다.
 Room은 기본으로 켜지만 인메모리 빌더에서 다르게 동작할 수 있다.
@@ -708,7 +744,7 @@ CASCADE가 실제로 동작하지 않으면 추적을 해제해도 이력이 DB�
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 38, `:data` 63(56+7), `:presentation` 14.
+기대: `:domain` 38, `:data` 65(56+9), `:presentation` 14.
 
 ```bash
 git add gradle data
@@ -1112,7 +1148,7 @@ class RoomPriceHistoryRepository(
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 38, `:data` 72(63+9), `:presentation` 14.
+기대: `:domain` 38, `:data` 74(65+9), `:presentation` 14.
 
 ```bash
 git add domain data
@@ -1505,7 +1541,7 @@ import를 추가한다.
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 43, `:data` 72, `:presentation` 15(14+1).
+기대: `:domain` 43, `:data` 74, `:presentation` 15(14+1).
 
 ```bash
 git add presentation
@@ -1963,7 +1999,7 @@ fun TrackingScreen(
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 43, `:data` 72, `:presentation` 19(15+4).
+기대: `:domain` 43, `:data` 74, `:presentation` 19(15+4).
 
 ```bash
 git add presentation
@@ -2582,7 +2618,7 @@ class FlightDealApp : Application(), Configuration.Provider {
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 51, `:data` 72, `:presentation` 19. BUILD SUCCESSFUL.
+기대: `:domain` 51, `:data` 74, `:presentation` 19. BUILD SUCCESSFUL.
 
 - [ ] **Step 11: 에뮬레이터에서 확인**
 
@@ -2638,7 +2674,7 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - [ ] 공항은 IATA로만 동일성을 판정한다
 - [ ] `:domain`에 안드로이드 타입도 Travelpayouts라는 단어도 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 51, `:data` 72, `:presentation` 19
+- [ ] 전체 테스트 통과. `:domain` 51, `:data` 74, `:presentation` 19
 
 ## 다음 계획서
 
@@ -2653,3 +2689,4 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 - **다크 팔레트 없음.** 라이트 고정
 - **`transfers`/`duration`이 도메인까지 오지 않는다.** 경유편이 직항과 같은 무게로 표시된다
 - 마커 미발급 — 딥링크는 열리되 커미션이 안 붙는다
+- 스냅샷 테이블에 `capturedAt` 인덱스 없음. 10개 추적 기준 3,600행이라 풀스캔이 마이크로초다. 실제로 느려지면 그때 근거를 갖고 붙인다
