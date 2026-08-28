@@ -144,6 +144,16 @@ class TravelpayoutsFlightPriceRepositoryTest {
     }
 
     @Test
+    fun `레이트 리밋은 재시도 가능한 오류다`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429))
+
+        val result = repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+
+        // 잠시 뒤 다시 하면 되는 상황이므로 재시도 버튼이 떠야 한다.
+        assertTrue(result is AppResult.NetworkError)
+    }
+
+    @Test
     fun `연결이 끊기면 NetworkError다 재시도할 만하다`() = runTest {
         server.shutdown()
 

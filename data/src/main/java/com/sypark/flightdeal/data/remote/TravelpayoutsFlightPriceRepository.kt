@@ -152,7 +152,7 @@ class TravelpayoutsFlightPriceRepository(
     /**
      * 예외를 [AppResult]로 옮긴다.
      *
-     * 연결 실패만 [AppResult.NetworkError]다 — 재시도할 가치가 있는 유일한 경우다.
+     * 연결 실패와 429·5xx·408은 [AppResult.NetworkError]다 — 재시도할 가치가 있다.
      * 401(토큰 오류)이나 400(잘못된 노선)은 재시도해도 결과가 같으므로 [AppResult.Unknown]이다.
      */
     private suspend fun <T> call(block: suspend () -> List<T>): AppResult<List<T>> =
@@ -164,7 +164,13 @@ class TravelpayoutsFlightPriceRepository(
             } catch (e: IOException) {
                 AppResult.NetworkError(e)
             } catch (e: HttpException) {
-                AppResult.Unknown(e)
+                // 429·5xx·408은 잠시 뒤 다시 하면 풀린다 — 재시도 버튼을 줘야 한다.
+                // 401·400은 몇 번을 눌러도 같은 답이 온다.
+                if (e.code() == 408 || e.code() == 429 || e.code() >= 500) {
+                    AppResult.NetworkError(e)
+                } else {
+                    AppResult.Unknown(e)
+                }
             } catch (e: Exception) {
                 AppResult.Unknown(e)
             }
