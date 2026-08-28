@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -34,9 +33,6 @@ interface TrackedRouteDao {
         returnDate: String,
         tripType: String,
     ): Long?
-
-    @Update
-    suspend fun update(entity: TrackedRouteEntity)
 
     /** 알림이 실제로 전달된 뒤에만 부른다. */
     @Query("UPDATE tracked_route SET notifiedPrice = :price WHERE id = :id")
