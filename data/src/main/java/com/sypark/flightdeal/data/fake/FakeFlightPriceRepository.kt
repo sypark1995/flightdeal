@@ -53,6 +53,18 @@ class FakeFlightPriceRepository(
             .takeIf { it.isNotEmpty() }
     }
 
+    // FakeDealFixtures에는 예약처 개념이 없어 거를 게 없다. calendarPrices와 같은 값을
+    // 준다 — 갈리면 딜 피드와 캘린더의 개발용 데이터가 달라진다.
+    override suspend fun calendarDeals(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>> = respond {
+        FakeDealFixtures.monthlyPrices(route, month)
+            .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+            .takeIf { it.isNotEmpty() }
+    }
+
     override suspend fun priceStats(
         route: Route,
         month: YearMonth,

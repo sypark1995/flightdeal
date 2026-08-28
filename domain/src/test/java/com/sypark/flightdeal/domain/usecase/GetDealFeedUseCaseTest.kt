@@ -45,6 +45,8 @@ class GetDealFeedUseCaseTest {
         override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) = deals
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType) =
             AppResult.Success(emptyList<PriceQuote>())
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType) =
+            AppResult.Success(emptyList<PriceQuote>())
         override suspend fun priceStats(
             route: Route,
             month: YearMonth,
@@ -157,6 +159,8 @@ class GetDealFeedUseCaseTest {
             }
             override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<List<PriceQuote>> = AppResult.Empty
+            override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<List<PriceQuote>> = AppResult.Empty
             override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<PriceStats> = AppResult.Empty
             override suspend fun trackedPrice(
@@ -177,6 +181,8 @@ class GetDealFeedUseCaseTest {
             override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) =
                 AppResult.Success(listOf(quote(189_000)))
             override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<List<PriceQuote>> = AppResult.Empty
+            override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<List<PriceQuote>> = AppResult.Empty
             override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<PriceStats> {

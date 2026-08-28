@@ -137,6 +137,9 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
 
@@ -155,6 +158,9 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
 
@@ -171,6 +177,9 @@ class DealFeedViewModelTest {
         ): AppResult<List<PriceQuote>> = AppResult.Unknown(IllegalStateException("boom"))
 
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
@@ -243,6 +252,9 @@ class DealFeedViewModelTest {
         }
 
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
+            AppResult<List<PriceQuote>> = AppResult.Empty
+
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType):
             AppResult<List<PriceQuote>> = AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):

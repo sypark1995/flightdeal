@@ -34,6 +34,22 @@ interface FlightPriceRepository {
         tripType: TripType,
     ): AppResult<List<PriceQuote>>
 
+    /**
+     * 캘린더 화면이 쓰는, 날짜별 **예약 가능한** 최저가.
+     *
+     * [calendarPrices]와 다르다. 저쪽은 할인율 기준선을 만드는 통계용이라 예약처로
+     * 거르지 않은 시장 전체의 분포를 준다. 이쪽은 사용자가 눌러서 결제할 화면이므로
+     * 딜 피드·가격 추적과 **같은 예약처 규칙**을 쓴다. 규칙이 갈리면 같은 날짜인데
+     * 화면마다 다른 숫자가 뜬다.
+     *
+     * 날짜당 하나씩, 출발일 오름차순.
+     */
+    suspend fun calendarDeals(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
+
     /** 한 노선·한 달의 가격 분포. 할인율 배지의 기준. */
     suspend fun priceStats(
         route: Route,
