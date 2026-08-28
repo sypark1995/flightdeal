@@ -10,6 +10,7 @@ import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.delay
 import java.io.IOException
+import java.time.LocalDate
 import java.time.YearMonth
 
 /**
@@ -60,6 +61,18 @@ class FakeFlightPriceRepository(
         val prices = FakeDealFixtures.monthlyPrices(route, month)
             .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
         PriceStats.from(prices.map { it.price })
+    }
+
+    override suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won> = respond {
+        FakeDealFixtures.monthlyPrices(route, YearMonth.from(departDate))
+            .firstOrNull { it.departDate == departDate }
+            ?.let { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+            ?.price
     }
 
     /**

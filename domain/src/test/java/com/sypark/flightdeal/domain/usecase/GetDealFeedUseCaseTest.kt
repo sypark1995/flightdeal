@@ -53,6 +53,9 @@ class GetDealFeedUseCaseTest {
             priceStatsCalls++
             return stats
         }
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
     }
 
     @Test
@@ -156,6 +159,9 @@ class GetDealFeedUseCaseTest {
                 AppResult<List<PriceQuote>> = AppResult.Empty
             override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<PriceStats> = AppResult.Empty
+            override suspend fun trackedPrice(
+                route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+            ): AppResult<Won> = AppResult.Empty
         }
         val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
 
@@ -177,6 +183,9 @@ class GetDealFeedUseCaseTest {
                 statsTripType = tripType
                 return AppResult.Empty
             }
+            override suspend fun trackedPrice(
+                route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+            ): AppResult<Won> = AppResult.Empty
         }
         val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
 

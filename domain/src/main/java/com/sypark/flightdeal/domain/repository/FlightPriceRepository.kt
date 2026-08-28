@@ -6,6 +6,8 @@ import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.model.Won
+import java.time.LocalDate
 import java.time.YearMonth
 
 /**
@@ -38,4 +40,21 @@ interface FlightPriceRepository {
         month: YearMonth,
         tripType: TripType,
     ): AppResult<PriceStats>
+
+    /**
+     * 추적 중인 여정 하나의 현재 가격.
+     *
+     * 등록 시점의 기준가와 이후 폴링은 **반드시 같은 규칙**으로 골라야 한다.
+     * 다르게 고르면 첫 비교에서 있지도 않은 변동이 잡히고, 사용자는 알림을 받고
+     * 예약처에 들어가서 가격이 그대로인 것을 본다.
+     *
+     * 출발일과 귀국일을 모두 맞춘다. 출발일만 맞추면 귀국일이 다른 조합이 잡혀
+     * 가격이 그대로여도 매 실행마다 변동으로 읽힌다.
+     */
+    suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won>
 }

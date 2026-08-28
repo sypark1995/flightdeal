@@ -138,6 +138,10 @@ class DealFeedViewModelTest {
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
     }
 
     private class ThrowingRepository : FlightPriceRepository {
@@ -152,6 +156,10 @@ class DealFeedViewModelTest {
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
     }
 
     private class UnknownErrorRepository : FlightPriceRepository {
@@ -166,6 +174,10 @@ class DealFeedViewModelTest {
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
     }
 
     @Test
@@ -234,6 +246,10 @@ class DealFeedViewModelTest {
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
             AppResult<PriceStats> = AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
     }
 
     @Test

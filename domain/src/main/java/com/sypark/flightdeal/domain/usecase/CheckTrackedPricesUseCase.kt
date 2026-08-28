@@ -4,11 +4,11 @@ import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.PriceChange
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.TrackedRoute
+import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import java.time.Clock
-import java.time.YearMonth
 import javax.inject.Inject
 
 /**
@@ -46,23 +46,17 @@ class CheckTrackedPricesUseCase @Inject constructor(
         return detectChanges(tracked, previous, current)
     }
 
-    /**
-     * 한 노선이 실패했다고 나머지를 포기하지 않는다.
-     *
-     * 왕복은 귀국일을 정확히 지정하지 않고 같은 달로 조회한다. API가 출발월·귀국월 단위로만
-     * 받기 때문이다. 그래서 등록한 귀국일과 다른 조합의 가격이 잡힐 수 있다 —
-     * 같은 기준으로 계속 비교하므로 변동 판정은 성립한다.
-     */
-    private suspend fun currentPrice(tracked: TrackedRoute) =
+    /** 한 노선이 실패했다고 나머지를 포기하지 않는다. */
+    private suspend fun currentPrice(tracked: TrackedRoute): Won? =
         when (
-            val result = prices.calendarPrices(
+            val result = prices.trackedPrice(
                 route = tracked.route,
-                month = YearMonth.from(tracked.departDate),
+                departDate = tracked.departDate,
+                returnDate = tracked.returnDate,
                 tripType = tracked.tripType,
             )
         ) {
-            is AppResult.Success ->
-                result.data.filter { it.departDate == tracked.departDate }.minByOrNull { it.price.amount }?.price
+            is AppResult.Success -> result.data
             else -> null
         }
 

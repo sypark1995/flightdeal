@@ -61,30 +61,27 @@ class CheckTrackedPricesUseCaseTest {
     }
 
     private class StubPrices(
-        private val result: AppResult<List<PriceQuote>>,
+        private val result: AppResult<Won>,
     ) : FlightPriceRepository {
+        var seenDepartDate: LocalDate? = null
+        var seenReturnDate: LocalDate? = null
         var seenTripType: TripType? = null
 
         override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) =
             AppResult.Empty
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
-            AppResult<List<PriceQuote>> {
+            AppResult<List<PriceQuote>> = AppResult.Empty
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
+            AppResult<PriceStats> = AppResult.Empty
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> {
+            seenDepartDate = departDate
+            seenReturnDate = returnDate
             seenTripType = tripType
             return result
         }
-        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
-            AppResult<PriceStats> = AppResult.Empty
     }
-
-    private fun quote(price: Int) = PriceQuote(
-        route = route,
-        departDate = LocalDate.of(2026, 10, 12),
-        returnDate = LocalDate.of(2026, 10, 16),
-        price = Won(price),
-        airline = "대한항공",
-        foundAt = Instant.EPOCH,
-        deepLink = null,
-    )
 
     private fun snapshot(price: Int, tripType: TripType = TripType.ROUND_TRIP) =
         PriceSnapshot(1L, Won(price), tripType, Instant.EPOCH)
@@ -101,7 +98,7 @@ class CheckTrackedPricesUseCaseTest {
         val changes = useCase(
             StubRoutes(listOf(tracked())),
             history,
-            StubPrices(AppResult.Success(listOf(quote(280_000)))),
+            StubPrices(AppResult.Success(Won(280_000))),
         ).invoke()
 
         assertEquals(1, changes.size)
@@ -115,7 +112,7 @@ class CheckTrackedPricesUseCaseTest {
         useCase(
             StubRoutes(listOf(tracked())),
             history,
-            StubPrices(AppResult.Success(listOf(quote(280_000)))),
+            StubPrices(AppResult.Success(Won(280_000))),
         ).invoke()
 
         // 다음 실행의 비교 대상이 된다. 남기지 않으면 매번 같은 변동을 다시 알린다.
@@ -124,7 +121,7 @@ class CheckTrackedPricesUseCaseTest {
 
     @Test
     fun `추적 항목의 여정 종류로 조회한다`() = runTest {
-        val prices = StubPrices(AppResult.Success(listOf(quote(280_000))))
+        val prices = StubPrices(AppResult.Success(Won(280_000)))
 
         useCase(StubRoutes(listOf(tracked())), StubHistory(snapshot(300_000)), prices).invoke()
 
@@ -139,7 +136,7 @@ class CheckTrackedPricesUseCaseTest {
         useCase(
             StubRoutes(listOf(tracked())),
             history,
-            StubPrices(AppResult.Success(listOf(quote(280_000)))),
+            StubPrices(AppResult.Success(Won(280_000))),
         ).invoke()
 
         assertEquals(TripType.ROUND_TRIP, history.appended.single().tripType)
@@ -150,7 +147,7 @@ class CheckTrackedPricesUseCaseTest {
         val changes = useCase(
             StubRoutes(listOf(tracked())),
             StubHistory(snapshot(300_000)),
-            StubPrices(AppResult.Success(listOf(quote(300_000)))),
+            StubPrices(AppResult.Success(Won(300_000))),
         ).invoke()
 
         assertTrue(changes.isEmpty())
@@ -186,9 +183,21 @@ class CheckTrackedPricesUseCaseTest {
         useCase(
             StubRoutes(listOf(tracked())),
             history,
-            StubPrices(AppResult.Success(listOf(quote(280_000)))),
+            StubPrices(AppResult.Success(Won(280_000))),
         ).invoke()
 
         assertTrue(history.pruned)
+    }
+
+    @Test
+    fun `추적 항목의 여정을 그대로 조회한다`() = runTest {
+        val prices = StubPrices(AppResult.Success(Won(280_000)))
+
+        useCase(StubRoutes(listOf(tracked())), StubHistory(snapshot(300_000)), prices).invoke()
+
+        // 등록 때와 같은 여정을 물어야 같은 규칙으로 고른 값이 온다.
+        assertEquals(LocalDate.of(2026, 10, 12), prices.seenDepartDate)
+        assertEquals(LocalDate.of(2026, 10, 16), prices.seenReturnDate)
+        assertEquals(TripType.ROUND_TRIP, prices.seenTripType)
     }
 }

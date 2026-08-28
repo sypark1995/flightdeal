@@ -4,6 +4,7 @@ import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.model.Won
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -17,6 +18,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -247,5 +249,58 @@ class TravelpayoutsFlightPriceRepositoryTest {
 
         // 편도와 왕복은 다른 운임이다. 같은 캐시를 쓰면 안 된다.
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `추적 가격도 한국에서 예약 가능한 예약처를 우선한다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T09:20:00+09:00",
+                   "return_at":"2026-10-12T10:40:00+09:00","price":301430,"airline":"KE",
+                   "gate":"Farera","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "return_at":"2026-10-12T10:40:00+09:00","price":330000,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = repository.trackedPrice(
+            route = route,
+            departDate = LocalDate.of(2026, 10, 6),
+            returnDate = LocalDate.of(2026, 10, 12),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 더 싼 301,430은 한국에서 결제가 안 되는 예약처다. 딜 피드가 고른 것과 같아야 한다 —
+        // 다르면 등록 직후 첫 실행에서 있지도 않은 하락이 잡힌다.
+        assertEquals(Won(330_000), (result as AppResult.Success).data)
+    }
+
+    @Test
+    fun `귀국일이 다르면 같은 여정으로 치지 않는다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-13T09:20:00+09:00",
+                   "return_at":"2026-10-20T10:40:00+09:00","price":320806,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-13T15:15:00+09:00",
+                   "return_at":"2026-10-16T10:40:00+09:00","price":326181,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = repository.trackedPrice(
+            route = route,
+            departDate = LocalDate.of(2026, 10, 13),
+            returnDate = LocalDate.of(2026, 10, 16),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 출발일만 맞추면 10/20 귀국편이 잡혀 매번 가짜 변동이 뜬다.
+        assertEquals(Won(326_181), (result as AppResult.Success).data)
     }
 }
