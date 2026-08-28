@@ -492,8 +492,10 @@ interface PriceSnapshotDao {
     suspend fun insert(entity: PriceSnapshotEntity)
 
     @Query(
+        // latestFor와 같은 이유로 id 타이브레이크를 둔다. 같은 초에 들어간 두 행의
+        // 순서가 뒤집히면 어느 쪽이 최신인지가 바뀌어 화살표와 색이 반대로 뜬다.
         "SELECT * FROM price_snapshot WHERE trackedRouteId = :trackedRouteId " +
-            "AND capturedAt >= :sinceEpochSecond ORDER BY capturedAt ASC"
+            "AND capturedAt >= :sinceEpochSecond ORDER BY capturedAt ASC, id ASC"
     )
     fun observeFor(trackedRouteId: Long, sinceEpochSecond: Long): Flow<List<PriceSnapshotEntity>>
 
@@ -1745,6 +1747,33 @@ class TrackingViewModelTest {
     }
 
     @Test
+    fun `새 가격이 저장되면 화면이 바로 갱신된다`() = runTest {
+        val snapshots = MutableStateFlow(listOf(snapshot(300_000, 100)))
+        val history = object : PriceHistoryRepository {
+            override suspend fun append(snapshot: PriceSnapshot) = Unit
+            override suspend fun latest(trackedRouteId: Long): PriceSnapshot? = null
+            override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
+                snapshots
+            override suspend fun pruneOlderThan(days: Int) = Unit
+        }
+
+        viewModel(FakeRoutes(listOf(tracked())), history).uiState.test {
+            awaitItem()
+            assertEquals(
+                Won(300_000),
+                (awaitItem() as TrackingUiState.Success).items.single().latest!!.price,
+            )
+
+            // 워커가 새 가격을 저장한 상황. 탭을 나갔다 오지 않아도 보여야 한다.
+            snapshots.value = listOf(snapshot(300_000, 100), snapshot(280_000, 200))
+
+            val updated = (awaitItem() as TrackingUiState.Success).items.single()
+            assertEquals(Won(280_000), updated.latest!!.price)
+            assertEquals(Won(300_000), updated.previous!!.price)
+        }
+    }
+
+    @Test
     fun `해제하면 목록에서 빠진다`() = runTest {
         val routes = FakeRoutes(listOf(tracked()))
         val vm = viewModel(routes, FakeHistory(listOf(snapshot(300_000, 100))))
@@ -1784,9 +1813,13 @@ import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import com.sypark.flightdeal.domain.usecase.UntrackRouteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -1799,12 +1832,20 @@ class TrackingViewModel @Inject constructor(
     private val untrackRoute: UntrackRouteUseCase,
 ) : ViewModel() {
 
+    /**
+     * 노선별 이력 Flow를 그대로 묶는다. `.first()`로 한 번 찍어 오면 구독이 바로 끊겨
+     * 워커가 새 가격을 저장해도 화면이 안 바뀐다 — 가격 추적 화면이 가격 변화를
+     * 못 보여주게 된다. `combine`은 조회를 병렬로 돌리기도 한다.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<TrackingUiState> = trackedRoutes.observeAll()
-        .map { routes ->
+        .flatMapLatest { routes ->
             if (routes.isEmpty()) {
-                TrackingUiState.Empty
+                flowOf(TrackingUiState.Empty)
             } else {
-                TrackingUiState.Success(routes.map { it.withRecentPrices() })
+                combine(routes.map { it.itemFlow() }) { items ->
+                    TrackingUiState.Success(items.toList())
+                }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrackingUiState.Loading)
@@ -1817,14 +1858,14 @@ class TrackingViewModel @Inject constructor(
      * 마지막 두 관측값을 붙인다. 하나뿐이면 [TrackedItem.previous]가 null이고
      * 화면은 변동을 표시하지 않는다 — 등록 직후엔 비교할 대상이 없다.
      */
-    private suspend fun TrackedRoute.withRecentPrices(): TrackedItem {
-        val recent = history.observeHistory(id, days = HISTORY_DAYS).first()
-        return TrackedItem(
-            tracked = this,
-            latest = recent.lastOrNull(),
-            previous = recent.getOrNull(recent.lastIndex - 1),
-        )
-    }
+    private fun TrackedRoute.itemFlow(): Flow<TrackedItem> =
+        history.observeHistory(id, HISTORY_DAYS).map { recent ->
+            TrackedItem(
+                tracked = this,
+                latest = recent.lastOrNull(),
+                previous = recent.getOrNull(recent.lastIndex - 1),
+            )
+        }
 
     private companion object {
         const val HISTORY_DAYS = 90
