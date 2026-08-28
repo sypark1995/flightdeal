@@ -5,16 +5,23 @@ import com.sypark.flightdeal.data.fake.FakeFlightPriceRepository
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.PriceQuote
+import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
+import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
+import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import com.sypark.flightdeal.domain.usecase.CalculateDiscountUseCase
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
+import com.sypark.flightdeal.domain.usecase.TrackRouteUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -42,7 +49,8 @@ class DealFeedViewModelTest {
 
     private fun viewModel(behavior: FakeFlightPriceRepository.Behavior) =
         DealFeedViewModel(
-            GetDealFeedUseCase(FakeFlightPriceRepository(behavior), CalculateDiscountUseCase())
+            getDealFeed = GetDealFeedUseCase(FakeFlightPriceRepository(behavior), CalculateDiscountUseCase()),
+            trackRoute = TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
         )
 
     @Test
@@ -163,7 +171,7 @@ class DealFeedViewModelTest {
     @Test
     fun `재시도를 연타하면 이전 요청은 취소되고 마지막 결과만 반영된다`() = runTest {
         val repo = SlowFirstRepository()
-        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()))
+        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()), TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()))
 
         // 첫 요청이 실제로 시작되어 응답을 기다리는 상태까지 진행시킨다.
         // 이 단계를 빼면 첫 작업이 디스패치 전에 취소되어 조회가 한 번만 일어난다.
@@ -182,7 +190,10 @@ class DealFeedViewModelTest {
 
     @Test
     fun `Repository가 예외를 던져도 앱이 죽지 않고 재시도 불가 오류가 된다`() = runTest {
-        val viewModel = DealFeedViewModel(GetDealFeedUseCase(ThrowingRepository(), CalculateDiscountUseCase()))
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(ThrowingRepository(), CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
 
         advanceUntilIdle()
 
@@ -193,7 +204,10 @@ class DealFeedViewModelTest {
 
     @Test
     fun `알 수 없는 오류는 재시도 불가 오류가 된다`() = runTest {
-        val viewModel = DealFeedViewModel(GetDealFeedUseCase(UnknownErrorRepository(), CalculateDiscountUseCase()))
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(UnknownErrorRepository(), CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
 
         advanceUntilIdle()
 
@@ -232,7 +246,7 @@ class DealFeedViewModelTest {
     @Test
     fun `여정 종류를 바꾸면 다시 조회한다`() = runTest {
         val repo = CountingRepository()
-        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()))
+        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()), TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()))
         advanceUntilIdle()
         val before = repo.calls
 
@@ -246,7 +260,7 @@ class DealFeedViewModelTest {
     @Test
     fun `같은 여정 종류를 다시 고르면 조회하지 않는다`() = runTest {
         val repo = CountingRepository()
-        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()))
+        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()), TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()))
         advanceUntilIdle()
         val before = repo.calls
 
@@ -254,5 +268,52 @@ class DealFeedViewModelTest {
         advanceUntilIdle()
 
         assertEquals(before, repo.calls)
+    }
+
+    @Test
+    fun `딜을 추적하면 현재 여정 종류로 등록한다`() = runTest {
+        val routes = RecordingTrackedRoutes()
+        val viewModel = DealFeedViewModel(
+            getDealFeed = GetDealFeedUseCase(
+                FakeFlightPriceRepository(), CalculateDiscountUseCase()
+            ),
+            trackRoute = TrackRouteUseCase(routes, NoopHistory()),
+        )
+        advanceUntilIdle()
+        val deal = (viewModel.uiState.value as DealFeedUiState.Success).deals.first()
+
+        viewModel.setTripType(TripType.ONE_WAY)
+        advanceUntilIdle()
+        viewModel.track(deal)
+        advanceUntilIdle()
+
+        // 화면이 편도를 보여주는데 왕복으로 등록되면 이후 비교가 전부 어긋난다.
+        assertEquals(TripType.ONE_WAY, routes.lastTripType)
+    }
+
+    private class RecordingTrackedRoutes : TrackedRouteRepository {
+        var lastTripType: TripType? = null
+
+        override fun observeAll(): Flow<List<TrackedRoute>> = flowOf(emptyList())
+        override suspend fun getAll(): List<TrackedRoute> = emptyList()
+        override suspend fun add(
+            route: Route,
+            departDate: LocalDate,
+            returnDate: LocalDate?,
+            tripType: TripType,
+            targetPrice: Won?,
+        ): Long {
+            lastTripType = tripType
+            return 1L
+        }
+        override suspend fun remove(id: Long) = Unit
+    }
+
+    private class NoopHistory : PriceHistoryRepository {
+        override suspend fun append(snapshot: PriceSnapshot) = Unit
+        override suspend fun latest(trackedRouteId: Long): PriceSnapshot? = null
+        override fun observeHistory(trackedRouteId: Long, days: Int) =
+            flowOf(emptyList<PriceSnapshot>())
+        override suspend fun pruneOlderThan(days: Int) = Unit
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import com.sypark.flightdeal.ui.theme.TextSecondary
 fun DealCard(
     item: DealItem,
     onClick: () -> Unit,
+    onTrack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -66,7 +68,9 @@ fun DealCard(
         }
 
         Row(
-            modifier = Modifier.padding(top = 9.dp),
+            modifier = Modifier
+                .padding(top = 9.dp)
+                .fillMaxWidth(),
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -84,6 +88,19 @@ fun DealCard(
                     textDecoration = TextDecoration.LineThrough,
                 )
             }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Text(
+                text = "추적",
+                color = Indigo,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(IndigoSubtle, RoundedCornerShape(20.dp))
+                    .clickable(onClick = onTrack)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
     }
 }
