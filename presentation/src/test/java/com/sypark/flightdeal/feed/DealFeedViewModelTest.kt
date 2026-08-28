@@ -368,6 +368,8 @@ class DealFeedViewModelTest {
         override fun observeHistory(trackedRouteId: Long, days: Int) =
             flowOf(emptyList<PriceSnapshot>())
         override suspend fun pruneOlderThan(days: Int) = Unit
+        override fun observeCount(): Flow<Int> = flowOf(0)
+        override suspend fun clearAll() = Unit
     }
 
     private class ThrowingTrackedRoutes : TrackedRouteRepository {

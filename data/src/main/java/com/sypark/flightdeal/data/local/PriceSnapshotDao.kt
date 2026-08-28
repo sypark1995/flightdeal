@@ -31,4 +31,12 @@ interface PriceSnapshotDao {
     /** 이력은 계속 쌓인다. 워커가 돌 때 함께 치운다. */
     @Query("DELETE FROM price_snapshot WHERE capturedAt < :epochSecond")
     suspend fun deleteOlderThan(epochSecond: Long)
+
+    @Query("SELECT COUNT(*) FROM price_snapshot")
+    fun observeCount(): Flow<Int>
+
+    // tracked_route는 건드리지 않는다. 외래키는 tracked_route -> price_snapshot 방향으로
+    // CASCADE라, 이 방향은 아무리 지워도 추적 항목에 영향이 없다.
+    @Query("DELETE FROM price_snapshot")
+    suspend fun deleteAll()
 }
