@@ -335,7 +335,6 @@ gson = "2.11.0"
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
 retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
-okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
 okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 ```
@@ -347,13 +346,13 @@ gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
     implementation(libs.retrofit.converter.gson)
     implementation(libs.okhttp)
     implementation(libs.gson)
-    debugImplementation(libs.okhttp.logging)
-
     testImplementation(libs.okhttp.mockwebserver)
 ```
 
-`debugImplementation`으로 두는 이유: 로깅 인터셉터가 릴리스 빌드에 들어가면 토큰이 붙은
-URL이 로그캣에 그대로 찍힌다.
+**`HttpLoggingInterceptor`를 쓰지 않는다.** 이 라이브러리는 `BASIC` 레벨에서도 요청 URL을
+쿼리까지 통째로 찍는다. 토큰이 쿼리에 실려 있으므로 레벨을 낮춰도 키가 로그캣에 남는다.
+"레벨을 낮게 유지하자"는 규율에 안전을 맡기는 대신, 토큰을 지운 URL만 만들어 찍는
+인터셉터를 직접 둔다(Step 4).
 
 - [ ] **Step 2: DTO 작성**
 
@@ -393,6 +392,8 @@ data class PriceDto(
     @SerializedName("transfers") val transfers: Int? = null,
     @SerializedName("return_transfers") val returnTransfers: Int? = null,
     @SerializedName("duration") val duration: Int? = null,
+    @SerializedName("duration_to") val durationTo: Int? = null,
+    @SerializedName("duration_back") val durationBack: Int? = null,
     @SerializedName("link") val link: String? = null,
 )
 ```
@@ -415,7 +416,9 @@ interface TravelpayoutsApi {
      *
      * @param departureAt `"2026-10"` 형태. 날짜까지 주면 그날만 온다.
      * @param returnAt 왕복일 때만 준다. 편도면 null.
-     * @param oneWay false면 왕복. [returnAt]과 함께 줘야 한다.
+     * @param oneWay [returnAt]에서 유도된다. 둘은 항상 같은 이야기를 해야 한다 —
+     *   API는 왕복에 `one_way=false`와 `return_at`을 함께 요구하고, 한쪽만 준 조합은
+     *   동작을 확인한 적이 없다.
      */
     @GET("aviasales/v3/prices_for_dates")
     suspend fun pricesForDates(
@@ -423,7 +426,7 @@ interface TravelpayoutsApi {
         @Query("destination") destination: String,
         @Query("departure_at") departureAt: String,
         @Query("return_at") returnAt: String? = null,
-        @Query("one_way") oneWay: Boolean = true,
+        @Query("one_way") oneWay: Boolean = returnAt == null,
         @Query("currency") currency: String = "krw",
         @Query("sorting") sorting: String = "price",
         @Query("limit") limit: Int = 1000,
@@ -446,6 +449,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import android.util.Log
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -459,10 +463,12 @@ object NetworkModule {
 
     private const val BASE_URL = "https://api.travelpayouts.com/"
 
+    private const val TAG = "Travelpayouts"
+
     /**
-     * 피드 한 번에 (노선 수 + 1)개의 요청이 병렬로 나간다. limit 기본값이 20이므로
-     * 최대 21개다. 레이트 리밋이 걸린 API에 그대로 쏟으면 429를 맞는다.
-     * 동시 실행 상한은 HTTP 사정이므로 도메인이 아니라 여기서 조인다.
+     * 피드 한 번에 목적지 수만큼의 요청이 병렬로 나간다. 레이트 리밋이 걸린 API에
+     * 그대로 쏟으면 429를 맞는다. 동시 실행 상한은 HTTP 사정이므로 도메인이 아니라 여기서 조인다.
+     * (여기서 말하는 상한은 동시 연결 수이지, API의 `limit` 쿼리 파라미터와는 무관하다.)
      */
     private const val MAX_REQUESTS_PER_HOST = 4
 
@@ -482,8 +488,24 @@ object NetworkModule {
                 .build()
             chain.proceed(chain.request().newBuilder().url(url).build())
         }
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val startedAt = System.nanoTime()
+            val response = chain.proceed(request)
+            if (BuildConfig.DEBUG) {
+                // HttpLoggingInterceptor는 BASIC 레벨에서도 쿼리를 통째로 찍는다.
+                // 토큰이 쿼리에 실려 있으므로 직접 지운 URL만 남긴다.
+                val safeUrl = request.url.newBuilder().removeAllQueryParameters("token").build()
+                val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+                Log.d(TAG, "${request.method} $safeUrl → ${response.code} (${elapsedMs}ms)")
+            }
+            response
+        }
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        // readTimeout은 읽기 사이의 간격만 막는다. 1바이트씩 흘려보내는 서버는
+        // 연결과 디스패처 슬롯을 무한정 붙잡는다. 호출 전체에 상한을 건다.
+        .callTimeout(30, TimeUnit.SECONDS)
         .build()
 
     @Provides
