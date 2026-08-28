@@ -53,7 +53,7 @@ Kotlin 2.1 · Jetpack Compose · Material 3 · Hilt · Coroutines/Flow · Naviga
 Room · WorkManager · Retrofit · Custom Tabs · KSP · Gradle Version Catalog
 
 Java 소스는 한 줄도 없다. compileSdk/targetSdk 36, minSdk 26.
-테스트 220건 (`:domain` 67 · `:data` 94 · `:presentation` 59).
+테스트 227건 (`:domain` 67 · `:data` 97 · `:presentation` 63).
 
 ## 만들면서 배운 것
 
