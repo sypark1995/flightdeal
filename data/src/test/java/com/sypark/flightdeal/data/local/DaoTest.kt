@@ -111,6 +111,26 @@ class DaoTest {
     }
 
     @Test
+    fun `기준 시각과 정확히 같은 이력은 포함된다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 200))
+
+        // 조회는 >= 다. > 로 바뀌면 보관 기한과 같은 시각의 스냅샷이 그래프에서 사라진다.
+        assertEquals(1, snapshots.observeFor(id, sinceEpochSecond = 200).first().size)
+    }
+
+    @Test
+    fun `기준 시각과 정확히 같은 이력은 지워지지 않는다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 200))
+
+        snapshots.deleteOlderThan(epochSecond = 200)
+
+        // 삭제는 < 다. <= 로 바뀌면 조회 조건(>=)과 겹쳐 한 주기 일찍 사라진다.
+        assertEquals(1, snapshots.observeFor(id, sinceEpochSecond = 0).first().size)
+    }
+
+    @Test
     fun `다른 노선의 이력은 섞이지 않는다`() = runTest {
         val tokyo = routes.insert(route("TYO"))
         val bangkok = routes.insert(route("BKK"))
