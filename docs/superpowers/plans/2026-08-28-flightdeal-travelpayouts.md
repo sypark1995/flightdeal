@@ -87,6 +87,7 @@ gson = "2.11.0"
 - Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/FlightPriceRepository.kt`
 - Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/GetDealFeedUseCase.kt`
 - Modify: `data/src/main/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepositoryTest.kt` (호출 4곳에 `tripType = TripType.ROUND_TRIP` 추가)
 - Modify: `domain/src/test/java/com/sypark/flightdeal/domain/usecase/GetDealFeedUseCaseTest.kt`
 - Modify: `presentation/src/test/java/com/sypark/flightdeal/feed/DealFeedViewModelTest.kt`
 - Modify: `presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedViewModel.kt`
@@ -205,12 +206,70 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
     ): AppResult<List<PriceQuote>> = respond {
         FakeDealFixtures.deals()
             .take(limit)
-            .map { if (tripType == TripType.ONE_WAY) it.copy(returnDate = null) else it }
+            .map { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
             .takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * 픽스처는 왕복 기준이다. 귀국일만 지우고 가격을 그대로 두면 같은 항공편이
+     * "10만원 편도"이자 "10만원 왕복"이 되어버린다. 실측에서 인천→도쿄 편도는
+     * 왕복의 3분의 1 수준이었으므로 어림잡아 60%로 낮춘다.
+     */
+    private fun PriceQuote.asOneWay(): PriceQuote =
+        copy(returnDate = null, price = Won(price.amount * ONE_WAY_RATIO_PERCENT / 100))
+```
+
+`respond` 아래 `companion object`에 상수를 추가한다.
+
+```kotlin
+        /** 편도는 왕복의 대략 60%. Fake가 편도와 왕복을 같은 값으로 말하지 않게 한다. */
+        const val ONE_WAY_RATIO_PERCENT = 60
+```
+
+`TripType`과 `Won` import를 추가한다.
+
+- [ ] **Step 6b: 편도 변환 테스트 작성**
+
+`data/src/test/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepositoryTest.kt`에 추가한다.
+이 `.map`이 이 태스크가 만드는 유일한 새 로직이므로 테스트로 고정한다.
+
+```kotlin
+    @Test
+    fun `편도를 요청하면 귀국일이 없다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val deals = (repo.cheapestDeals(Airport.INCHEON, 10, TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        assertTrue(deals.isNotEmpty())
+        assertTrue(deals.all { it.returnDate == null })
+    }
+
+    @Test
+    fun `왕복을 요청하면 귀국일이 있다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val deals = (repo.cheapestDeals(Airport.INCHEON, 10, TripType.ROUND_TRIP)
+            as AppResult.Success).data
+
+        assertTrue(deals.all { it.returnDate != null })
+    }
+
+    @Test
+    fun `편도가 왕복보다 싸다`() = runTest {
+        val repo = FakeFlightPriceRepository()
+
+        val oneWay = (repo.cheapestDeals(Airport.INCHEON, 1, TripType.ONE_WAY)
+            as AppResult.Success).data.first()
+        val roundTrip = (repo.cheapestDeals(Airport.INCHEON, 1, TripType.ROUND_TRIP)
+            as AppResult.Success).data.first()
+
+        // 같은 값이면 토글을 눌러도 화면이 그대로라 사용자가 고장으로 오해한다.
+        assertTrue(oneWay.price < roundTrip.price)
     }
 ```
 
-`TripType` import를 추가한다.
+`com.sypark.flightdeal.domain.model.TripType` import를 추가한다.
 
 - [ ] **Step 7: ViewModel과 그 테스트 수정**
 
@@ -229,7 +288,10 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :domain:test :data:test :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 32(31+1), `:data` 20, `:presentation` 10. BUILD SUCCESSFUL.
+기대: `:domain` 32(31+1), `:data` 13(10+3), `:presentation` 10. BUILD SUCCESSFUL.
+
+`:data`는 debug와 release 유닛테스트를 둘 다 돌린다. 결과 XML 디렉터리가 두 개이므로
+둘을 합산해 세면 개수가 두 배로 부풀려진다. `testDebugUnitTest` 하나만 센다.
 
 - [ ] **Step 9: 커밋**
 
@@ -273,7 +335,6 @@ gson = "2.11.0"
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
 retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
-okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
 okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 ```
@@ -285,13 +346,13 @@ gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
     implementation(libs.retrofit.converter.gson)
     implementation(libs.okhttp)
     implementation(libs.gson)
-    debugImplementation(libs.okhttp.logging)
-
     testImplementation(libs.okhttp.mockwebserver)
 ```
 
-`debugImplementation`으로 두는 이유: 로깅 인터셉터가 릴리스 빌드에 들어가면 토큰이 붙은
-URL이 로그캣에 그대로 찍힌다.
+**`HttpLoggingInterceptor`를 쓰지 않는다.** 이 라이브러리는 `BASIC` 레벨에서도 요청 URL을
+쿼리까지 통째로 찍는다. 토큰이 쿼리에 실려 있으므로 레벨을 낮춰도 키가 로그캣에 남는다.
+"레벨을 낮게 유지하자"는 규율에 안전을 맡기는 대신, 토큰을 지운 URL만 만들어 찍는
+인터셉터를 직접 둔다(Step 4).
 
 - [ ] **Step 2: DTO 작성**
 
@@ -331,6 +392,8 @@ data class PriceDto(
     @SerializedName("transfers") val transfers: Int? = null,
     @SerializedName("return_transfers") val returnTransfers: Int? = null,
     @SerializedName("duration") val duration: Int? = null,
+    @SerializedName("duration_to") val durationTo: Int? = null,
+    @SerializedName("duration_back") val durationBack: Int? = null,
     @SerializedName("link") val link: String? = null,
 )
 ```
@@ -353,7 +416,9 @@ interface TravelpayoutsApi {
      *
      * @param departureAt `"2026-10"` 형태. 날짜까지 주면 그날만 온다.
      * @param returnAt 왕복일 때만 준다. 편도면 null.
-     * @param oneWay false면 왕복. [returnAt]과 함께 줘야 한다.
+     * @param oneWay [returnAt]에서 유도된다. 둘은 항상 같은 이야기를 해야 한다 —
+     *   API는 왕복에 `one_way=false`와 `return_at`을 함께 요구하고, 한쪽만 준 조합은
+     *   동작을 확인한 적이 없다.
      */
     @GET("aviasales/v3/prices_for_dates")
     suspend fun pricesForDates(
@@ -361,7 +426,7 @@ interface TravelpayoutsApi {
         @Query("destination") destination: String,
         @Query("departure_at") departureAt: String,
         @Query("return_at") returnAt: String? = null,
-        @Query("one_way") oneWay: Boolean = true,
+        @Query("one_way") oneWay: Boolean = returnAt == null,
         @Query("currency") currency: String = "krw",
         @Query("sorting") sorting: String = "price",
         @Query("limit") limit: Int = 1000,
@@ -384,6 +449,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import android.util.Log
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -397,10 +463,12 @@ object NetworkModule {
 
     private const val BASE_URL = "https://api.travelpayouts.com/"
 
+    private const val TAG = "Travelpayouts"
+
     /**
-     * 피드 한 번에 (노선 수 + 1)개의 요청이 병렬로 나간다. limit 기본값이 20이므로
-     * 최대 21개다. 레이트 리밋이 걸린 API에 그대로 쏟으면 429를 맞는다.
-     * 동시 실행 상한은 HTTP 사정이므로 도메인이 아니라 여기서 조인다.
+     * 피드 한 번에 목적지 수만큼의 요청이 병렬로 나간다. 레이트 리밋이 걸린 API에
+     * 그대로 쏟으면 429를 맞는다. 동시 실행 상한은 HTTP 사정이므로 도메인이 아니라 여기서 조인다.
+     * (여기서 말하는 상한은 동시 연결 수이지, API의 `limit` 쿼리 파라미터와는 무관하다.)
      */
     private const val MAX_REQUESTS_PER_HOST = 4
 
@@ -420,8 +488,24 @@ object NetworkModule {
                 .build()
             chain.proceed(chain.request().newBuilder().url(url).build())
         }
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val startedAt = System.nanoTime()
+            val response = chain.proceed(request)
+            if (BuildConfig.DEBUG) {
+                // HttpLoggingInterceptor는 BASIC 레벨에서도 쿼리를 통째로 찍는다.
+                // 토큰이 쿼리에 실려 있으므로 직접 지운 URL만 남긴다.
+                val safeUrl = request.url.newBuilder().removeAllQueryParameters("token").build()
+                val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+                Log.d(TAG, "${request.method} $safeUrl → ${response.code} (${elapsedMs}ms)")
+            }
+            response
+        }
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        // readTimeout은 읽기 사이의 간격만 막는다. 1바이트씩 흘려보내는 서버는
+        // 연결과 디스패처 슬롯을 무한정 붙잡는다. 호출 전체에 상한을 건다.
+        .callTimeout(30, TimeUnit.SECONDS)
         .build()
 
     @Provides
@@ -490,17 +574,24 @@ package com.sypark.flightdeal.data.remote
  */
 object AirlineNames {
 
+    // 코드는 실제 응답 픽스처에 나타난 것과 IATA 공식 코드로 확인했다.
+    // 에어프레미아는 YP다. RF는 청주 기반의 다른 항공사인 에어로케이이므로
+    // 둘을 헷갈리면 사용자에게 엉뚱한 항공사 이름이 뜬다 —
+    // 코드가 그대로 보이는 것보다 나쁘다.
     private val NAMES = mapOf(
         // 국적사
         "KE" to "대한항공", "OZ" to "아시아나항공", "TW" to "티웨이항공",
         "LJ" to "진에어", "7C" to "제주항공", "ZE" to "이스타항공",
-        "BX" to "에어부산", "RS" to "에어서울", "RF" to "에어프레미아",
+        "BX" to "에어부산", "RS" to "에어서울", "YP" to "에어프레미아",
+        "RF" to "에어로케이",
         // 일본
         "JL" to "일본항공", "NH" to "전일본공수", "MM" to "피치항공",
+        "ZG" to "집에어",
         // 동남아
-        "TG" to "타이항공", "VJ" to "비엣젯항공", "VN" to "베트남항공",
-        "SQ" to "싱가포르항공", "PR" to "필리핀항공", "MH" to "말레이시아항공",
-        "GA" to "가루다인도네시아", "AK" to "에어아시아",
+        "TG" to "타이항공", "VJ" to "비엣젯항공", "VZ" to "타이비엣젯항공",
+        "VN" to "베트남항공", "FD" to "타이에어아시아",
+        "SQ" to "싱가포르항공", "TR" to "스쿠트", "PR" to "필리핀항공",
+        "MH" to "말레이시아항공", "GA" to "가루다인도네시아", "AK" to "에어아시아",
         // 중화권
         "CI" to "중화항공", "BR" to "에바항공", "CX" to "캐세이퍼시픽",
         "HX" to "홍콩항공", "UO" to "홍콩익스프레스",
@@ -569,6 +660,14 @@ class GatePolicyTest {
     fun `빈 입력은 빈 출력이다`() {
         assertEquals(emptyList<Int>(), prioritize(emptyList(), minCount = 5))
     }
+
+    @Test
+    fun `minCount가 0이어도 비어 있지 않은 입력을 비우지 않는다`() {
+        val rows = listOf(Row("Aviakassa", 1), Row("Kupi.com", 2))
+        // 허용 예약처가 하나도 없는데 minCount가 0이면 "충분하다"가 참이 되어
+        // 빈 목록이 나가버린다. 화면을 비우지 않는 것이 이 함수의 목적이다.
+        assertEquals(listOf(1, 2), prioritize(rows, minCount = 0))
+    }
 }
 ```
 
@@ -609,7 +708,10 @@ object GatePolicy {
      */
     fun <T> prioritize(items: List<T>, gateOf: (T) -> String?, minCount: Int): List<T> {
         val (preferred, rest) = items.partition { gateOf(it) in PREFERRED }
-        if (preferred.size >= minCount) return preferred
+
+        // minCount가 0 이하면 "충분하다"가 무조건 참이 되어, 허용 예약처가 하나도 없는
+        // 노선에서 빈 목록을 돌려준다. 이 함수의 존재 이유가 바로 그걸 막는 것이다.
+        if (preferred.isNotEmpty() && preferred.size >= minCount.coerceAtLeast(1)) return preferred
         return preferred + rest
     }
 }
@@ -632,16 +734,18 @@ package com.sypark.flightdeal.data.remote
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeepLinkBuilderTest {
 
     @Test
-    fun `상대 경로에 도메인과 마커를 붙인다`() {
-        val url = DeepLinkBuilder.build("/search/ICN0610TYO1?t=abc", marker = "123456")!!
-        assertTrue(url.startsWith("https://www.aviasales.com/search/ICN0610TYO1?t=abc"))
-        assertTrue(url.contains("marker=123456"))
+    fun `쿼리가 있는 경로에는 앰퍼샌드로 마커를 잇는다`() {
+        // startsWith + contains로 나눠 검사하면 물음표를 두 번 붙이는 구현도 통과한다.
+        // 전체 문자열을 그대로 비교한다.
+        assertEquals(
+            "https://www.aviasales.com/search/ICN0610TYO1?t=abc&marker=123456",
+            DeepLinkBuilder.build("/search/ICN0610TYO1?t=abc", marker = "123456"),
+        )
     }
 
     @Test
@@ -711,7 +815,7 @@ object DeepLinkBuilder {
 ./gradlew :data:test
 ```
 
-기대: PASS (기존 20 + GatePolicy 6 + DeepLink 5 = 31건)
+기대: PASS (기존 13 + GatePolicy 7 + DeepLink 5 = 25건)
 
 - [ ] **Step 10: 커밋**
 
@@ -976,7 +1080,7 @@ object AirportNames {
 ./gradlew :data:test
 ```
 
-기대: PASS (31 + 매퍼 10 = 41건)
+기대: PASS (25 + 매퍼 10 = 35건)
 
 - [ ] **Step 7: 커밋**
 
@@ -1304,7 +1408,7 @@ class TravelpayoutsFlightPriceRepository(
 ./gradlew :data:test
 ```
 
-기대: PASS (41 + Repository 9 = 50건)
+기대: PASS (37 + Repository 9 = 46건)
 
 - [ ] **Step 5: 커밋**
 
@@ -1597,6 +1701,282 @@ git commit -m "feat: 특가 피드에 왕복·편도 전환 추가"
 
 ---
 
+## Task 5b: 분포를 딜과 같은 여정 종류로 계산 (Task 5 리뷰에서 발견)
+
+**Files:**
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/FlightPriceRepository.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/GetDealFeedUseCase.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepository.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: 위 인터페이스를 구현하는 모든 테스트 더블
+
+### 무엇이 잘못됐나
+
+`calendarPrices`가 `TripType.ONE_WAY`를 하드코딩하고 `priceStats`가 거기 위임한다.
+그런데 피드의 기본값은 왕복이다. 그래서 왕복 딜 가격을 편도 분포와 비교하게 된다.
+
+실측값으로 확인했다. 인천→도쿄 왕복 최저가는 301,430원, 편도 중앙값은 145,657원이다.
+`CalculateDiscountUseCase`는 `price >= stats.median`이면 null을 돌려주므로, 왕복 모드에서는
+**할인 배지가 단 하나도 뜨지 않는다.** 크래시도 오류도 없이 배지만 사라진다.
+
+이 앱의 핵심 가치가 "평균가 대비 −N%"이므로 조용히 그것만 죽는 셈이다.
+
+### 고침
+
+분포는 딜과 같은 종류의 운임으로 계산해야 한다. 여정 종류를 인터페이스로 끌어올린다.
+
+```kotlin
+interface FlightPriceRepository {
+
+    suspend fun cheapestDeals(
+        origin: Airport,
+        limit: Int,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
+
+    /**
+     * 한 노선·한 달의 날짜별 가격.
+     *
+     * @param tripType 왕복 가격을 편도 분포와 비교하면 할인율이 성립하지 않는다.
+     *   비교 대상은 같은 종류의 운임이어야 한다.
+     */
+    suspend fun calendarPrices(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
+
+    /** 한 노선·한 달의 가격 분포. 할인율 배지의 기준. */
+    suspend fun priceStats(
+        route: Route,
+        month: YearMonth,
+        tripType: TripType,
+    ): AppResult<PriceStats>
+}
+```
+
+`GetDealFeedUseCase.attachDiscounts`는 `invoke`가 받은 `tripType`을 그대로 넘긴다.
+중복 제거 키는 `(route, month)` 그대로 둔다 — 한 번의 `invoke` 안에서 `tripType`은 상수다.
+
+### 회귀 테스트
+
+`GetDealFeedUseCaseTest`에 추가한다. 이 버그가 되살아나면 바로 잡힌다.
+
+```kotlin
+    @Test
+    fun `분포도 딜과 같은 여정 종류로 조회한다`() = runTest {
+        var statsTripType: TripType? = null
+        val repo = object : FlightPriceRepository {
+            override suspend fun cheapestDeals(origin: Airport, limit: Int, tripType: TripType) =
+                AppResult.Success(listOf(quote(189_000)))
+            override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<List<PriceQuote>> = AppResult.Empty
+            override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
+                AppResult<PriceStats> {
+                statsTripType = tripType
+                return AppResult.Empty
+            }
+        }
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        useCase(incheon, TripType.ROUND_TRIP)
+
+        // 왕복 딜을 편도 분포와 비교하면 배지가 영영 안 뜬다.
+        assertEquals(TripType.ROUND_TRIP, statsTripType)
+    }
+```
+
+---
+
+## Task 5c: 목적지 조회 병렬화와 예약처 정책 실제 적용
+
+**Files:**
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepositoryTest.kt`
+
+### 무엇이 잘못됐나
+
+**하나.** `cheapestDeals`가 목적지를 순차로 돈다. 실제 네트워크에서 왕복 300~800ms이므로
+기본 6개면 첫 화면에 1.8~4.8초가 그냥 쌓인다. 같은 문제를 `GetDealFeedUseCase.attachDiscounts`가
+이미 `coroutineScope`/`async`/`awaitAll`로 풀어놨는데 여기서 다시 순차로 돌았다.
+
+**둘.** `GatePolicy`가 여기서 아무 일도 안 한다. 목적지마다 후보를 하나만 뽑는데
+`minCount = limit`(기본 20)로 부르므로 배제 분기가 절대 성립하지 않는다. 정렬만 하고
+필터링은 영영 안 된다. 한국에서 예약 못 하는 예약처의 항공권이 그대로 카드에 오른다.
+
+### 고침
+
+목적지마다 **그 노선 안에서** 예약처 우선순위를 적용해 한 건을 고른다. 그러면 정책이
+실제로 선택을 한다 — 한국에서 예약 가능한 최저가가 있으면 그것을, 없으면 그 노선의
+최저가라도 보여준다.
+
+```kotlin
+    override suspend fun cheapestDeals(
+        origin: Airport,
+        limit: Int,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>> = call {
+        val month = YearMonth.now(clock).plusMonths(LEAD_MONTHS)
+
+        coroutineScope {
+            destinations
+                .map { destination -> async { fetch(origin.iata, destination, month, tripType) } }
+                .awaitAll()
+                .mapNotNull { quotes ->
+                    // 목적지마다 한 건만 고른다. 한국에서 예약 가능한 예약처를 우선하되,
+                    // 그런 곳이 없으면 그 노선의 최저가라도 보여준다.
+                    // minCount=1이어야 정책이 실제로 고르는 일을 한다.
+                    GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()
+                }
+                .take(limit)
+                .map { it.quote }
+        }
+    }
+```
+
+`kotlinx.coroutines.async`, `awaitAll`, `coroutineScope` import를 추가한다.
+
+### 테스트 고침
+
+`success가 false면 Unknown이다` 테스트가 HTTP 400을 큐에 넣는다. 그러면 상태 코드만으로
+`HttpException`이 먼저 나서, 검사하려던 `if (!response.success)` 줄에 닿지도 않는다.
+그 줄을 지워도 테스트가 통과한다. 200에 `success:false`를 실어 진짜로 그 경로를 밟게 한다.
+
+```kotlin
+    @Test
+    fun `200이어도 success가 false면 Unknown이다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"error":"something","data":null,"success":false}""")
+        )
+
+        val result = repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+
+        assertTrue(result is AppResult.Unknown)
+    }
+```
+
+예약처 정책이 실제로 고르는지도 확인한다.
+
+```kotlin
+    @Test
+    fun `한국에서 예약 가능한 예약처를 우선해 고른다`() = runTest {
+        // 첫 항목이 더 싸지만 CIS 예약처다. 두 번째가 Trip.com이다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-07T15:15:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val deals = (repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        // 더 싸더라도 한국에서 결제가 안 되는 곳이면 소용없다.
+        assertEquals(1, deals.size)
+        assertEquals(120_000, deals.first().price.amount)
+    }
+```
+
+---
+
+## Task 5d: 같은 요청을 두 번 보내지 않기 (Task 5 재리뷰에서 발견)
+
+**Files:**
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepositoryTest.kt`
+
+### 무엇이 잘못됐나
+
+피드 한 번에 같은 요청이 두 번 나간다.
+
+`cheapestDeals`가 목적지마다 그 달 전체를 받아 최저가 하나만 남기고 버린다. 그 직후
+`GetDealFeedUseCase`가 딜마다 `priceStats`를 부르고, 그게 `calendarPrices`를 거쳐
+**방금 버린 것과 완전히 같은 요청**을 다시 보낸다. Task 5b에서 `tripType`을 맞추면서
+두 요청은 이제 바이트 단위로 동일해졌다.
+
+기본 목적지 6개 기준으로 피드 한 번에 12요청이다. 6이면 충분하다.
+레이트 리밋이 걸린 API에서 쿼터를 두 배로 태우고, Task 5c에서 병렬화로 얻은 이득을 절반 깎는다.
+
+### 고침
+
+`fetch`에 짧은 수명의 메모를 둔다. 두 호출이 몇 밀리초 간격으로 같은 키를 요청하므로
+짧은 TTL만으로 중복이 사라진다. 서버 쪽 데이터 자체가 7일 캐시라 몇 분 묵어도 문제없다.
+
+```kotlin
+    private data class CacheKey(
+        val origin: String,
+        val destination: String,
+        val month: YearMonth,
+        val tripType: TripType,
+    )
+
+    private class CacheEntry(val storedAt: Instant, val quotes: List<GatedQuote>)
+
+    private val cache = ConcurrentHashMap<CacheKey, CacheEntry>()
+```
+
+`fetch`의 맨 앞과 맨 끝에 넣는다.
+
+```kotlin
+        val key = CacheKey(originIata, destinationIata, month, tripType)
+        val now = clock.instant()
+
+        cache[key]?.let { cached ->
+            if (Duration.between(cached.storedAt, now) < CACHE_TTL) return cached.quotes
+        }
+
+        // ... 기존 조회와 매핑 ...
+
+        // 만료된 항목은 쓸 때 함께 치운다. 별도 청소 작업을 두지 않는다.
+        cache.entries.removeIf { Duration.between(it.value.storedAt, now) >= CACHE_TTL }
+        cache[key] = CacheEntry(now, quotes)
+        return quotes
+```
+
+`companion object`에 추가한다.
+
+```kotlin
+        /**
+         * 피드 한 번에 cheapestDeals와 priceStats가 같은 요청을 연달아 보낸다.
+         * 그 간격만 덮으면 되므로 길 필요가 없다. 소스 데이터 자체가 7일 캐시다.
+         */
+        private val CACHE_TTL: Duration = Duration.ofMinutes(5)
+```
+
+`java.time.Duration`, `java.util.concurrent.ConcurrentHashMap` import를 추가한다.
+
+### 테스트
+
+```kotlin
+    @Test
+    fun `같은 요청을 연달아 보내면 한 번만 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        repository.priceStats(route, YearMonth.now(clock).plusMonths(2), TripType.ONE_WAY)
+
+        // 응답을 하나만 큐에 넣었다. 캐시가 없으면 두 번째 호출이 응답을 기다리다 실패한다.
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `여정 종류가 다르면 따로 조회한다`() = runTest {
+        enqueueFixture("v3-ICN-TYO.json")
+        enqueueFixture("v3-ICN-TYO-roundtrip.json")
+
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ONE_WAY)
+        repository.cheapestDeals(incheon, limit = 10, tripType = TripType.ROUND_TRIP)
+
+        // 편도와 왕복은 다른 운임이다. 같은 캐시를 쓰면 안 된다.
+        assertEquals(2, server.requestCount)
+    }
+```
+
 ## 완료 기준
 
 - [ ] `RepositoryModule` 한 파일만 바꿔서 Fake ↔ 실데이터가 전환된다
@@ -1607,7 +1987,7 @@ git commit -m "feat: 특가 피드에 왕복·편도 전환 추가"
 - [ ] 딥링크에 marker가 붙는다 (마커 미발급 상태에서도 링크는 열린다)
 - [ ] `:domain`에 Travelpayouts라는 단어가 없다
 - [ ] `.java` 파일이 하나도 없다
-- [ ] 전체 테스트 통과. `:domain` 32, `:data` 50, `:presentation` 13
+- [ ] 전체 테스트 통과. `:domain` 33, `:data` 48, `:presentation` 13
 
 ## 다음 계획서
 

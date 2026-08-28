@@ -6,6 +6,7 @@ import com.sypark.flightdeal.domain.model.DealItem
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -18,9 +19,13 @@ class GetDealFeedUseCase @Inject constructor(
     private val calculateDiscount: CalculateDiscountUseCase,
 ) {
 
-    suspend operator fun invoke(origin: Airport, limit: Int = DEFAULT_LIMIT): AppResult<List<DealItem>> {
-        return when (val deals = repository.cheapestDeals(origin, limit)) {
-            is AppResult.Success -> AppResult.Success(attachDiscounts(deals.data))
+    suspend operator fun invoke(
+        origin: Airport,
+        tripType: TripType,
+        limit: Int = DEFAULT_LIMIT,
+    ): AppResult<List<DealItem>> {
+        return when (val deals = repository.cheapestDeals(origin, limit, tripType)) {
+            is AppResult.Success -> AppResult.Success(attachDiscounts(deals.data, tripType))
             AppResult.Empty -> AppResult.Empty
             is AppResult.NetworkError -> deals
             is AppResult.Unknown -> deals
@@ -33,14 +38,17 @@ class GetDealFeedUseCase @Inject constructor(
      *
      * 그래서 두 가지를 한다. 같은 (노선, 달)은 한 번만 조회하고, 그 조회들을 병렬로 돌린다.
      */
-    private suspend fun attachDiscounts(quotes: List<PriceQuote>): List<DealItem> = coroutineScope {
+    private suspend fun attachDiscounts(
+        quotes: List<PriceQuote>,
+        tripType: TripType,
+    ): List<DealItem> = coroutineScope {
         val keys = quotes.map { it.route to YearMonth.from(it.departDate) }.distinct()
 
         val statsByKey: Map<Pair<Route, YearMonth>, PriceStats> = keys
             .map { key ->
                 async {
                     // 분포 조회가 실패해도 딜 자체는 보여준다. 배지만 빠진다.
-                    key to (repository.priceStats(key.first, key.second) as? AppResult.Success)?.data
+                    key to (repository.priceStats(key.first, key.second, tripType) as? AppResult.Success)?.data
                 }
             }
             .awaitAll()

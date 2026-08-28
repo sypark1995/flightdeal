@@ -7,6 +7,7 @@ import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import com.sypark.flightdeal.domain.usecase.CalculateDiscountUseCase
@@ -84,6 +85,18 @@ class DealFeedViewModelTest {
         }
     }
 
+    @Test
+    fun `인증 실패는 재시도 불가 오류가 된다`() = runTest {
+        viewModel(FakeFlightPriceRepository.Behavior.Unauthorized).uiState.test {
+            assertEquals(DealFeedUiState.Loading, awaitItem())
+
+            val state = awaitItem()
+            assertTrue(state is DealFeedUiState.Error)
+            // 토큰이 잘못됐으면 몇 번을 눌러도 같다. 재시도 버튼을 주면 안 된다.
+            assertFalse((state as DealFeedUiState.Error).retryable)
+        }
+    }
+
     private val tokyo = Airport("TYO", "도쿄", "일본")
     private val route = Route(Airport.INCHEON, tokyo)
 
@@ -102,38 +115,48 @@ class DealFeedViewModelTest {
         var calls = 0
             private set
 
-        override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> {
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> {
             val current = ++calls
             delay(if (current == 1) 1_000L else 10L)
             return AppResult.Success(listOf(quote(100_000 * current)))
         }
 
-        override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
     }
 
     private class ThrowingRepository : FlightPriceRepository {
-        override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-            throw IOException("boom")
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> = throw IOException("boom")
 
-        override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
     }
 
     private class UnknownErrorRepository : FlightPriceRepository {
-        override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-            AppResult.Unknown(IllegalStateException("boom"))
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> = AppResult.Unknown(IllegalStateException("boom"))
 
-        override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
             AppResult.Empty
     }
 
@@ -177,5 +200,59 @@ class DealFeedViewModelTest {
         val state = viewModel.uiState.value
         assertTrue(state is DealFeedUiState.Error)
         assertFalse((state as DealFeedUiState.Error).retryable)
+    }
+
+    private inner class CountingRepository : FlightPriceRepository {
+        var calls = 0
+            private set
+
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> {
+            calls++
+            return AppResult.Success(listOf(quote(189_000)))
+        }
+
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
+            AppResult<List<PriceQuote>> = AppResult.Empty
+
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
+            AppResult<PriceStats> = AppResult.Empty
+    }
+
+    @Test
+    fun `기본은 왕복이다`() = runTest {
+        val viewModel = viewModel(FakeFlightPriceRepository.Behavior.Normal)
+
+        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
+    }
+
+    @Test
+    fun `여정 종류를 바꾸면 다시 조회한다`() = runTest {
+        val repo = CountingRepository()
+        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()))
+        advanceUntilIdle()
+        val before = repo.calls
+
+        viewModel.setTripType(TripType.ONE_WAY)
+        advanceUntilIdle()
+
+        assertEquals(TripType.ONE_WAY, viewModel.tripType.value)
+        assertEquals(before + 1, repo.calls)
+    }
+
+    @Test
+    fun `같은 여정 종류를 다시 고르면 조회하지 않는다`() = runTest {
+        val repo = CountingRepository()
+        val viewModel = DealFeedViewModel(GetDealFeedUseCase(repo, CalculateDiscountUseCase()))
+        advanceUntilIdle()
+        val before = repo.calls
+
+        viewModel.setTripType(TripType.ROUND_TRIP)
+        advanceUntilIdle()
+
+        assertEquals(before, repo.calls)
     }
 }

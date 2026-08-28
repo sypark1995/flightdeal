@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -23,9 +24,19 @@ class DealFeedViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<DealFeedUiState>(DealFeedUiState.Loading)
     val uiState: StateFlow<DealFeedUiState> = _uiState.asStateFlow()
 
+    private val _tripType = MutableStateFlow(TripType.ROUND_TRIP)
+    val tripType: StateFlow<TripType> = _tripType.asStateFlow()
+
     private var loadJob: Job? = null
 
     init {
+        refresh()
+    }
+
+    /** 같은 값이면 조회하지 않는다. 토글을 두 번 눌렀다고 왕복을 다시 받을 이유가 없다. */
+    fun setTripType(tripType: TripType) {
+        if (_tripType.value == tripType) return
+        _tripType.value = tripType
         refresh()
     }
 
@@ -39,7 +50,7 @@ class DealFeedViewModel @Inject constructor(
 
             // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
             _uiState.value = try {
-                when (val result = getDealFeed(Airport.INCHEON)) {
+                when (val result = getDealFeed(Airport.INCHEON, _tripType.value)) {
                     is AppResult.Success -> DealFeedUiState.Success(result.data)
                     AppResult.Empty -> DealFeedUiState.Empty
                     is AppResult.NetworkError -> {
