@@ -5,6 +5,7 @@ import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.delay
 import java.io.IOException
@@ -21,8 +22,16 @@ class FakeFlightPriceRepository(
 
     enum class Behavior { Normal, EmptyData, Failing }
 
-    override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-        respond { FakeDealFixtures.deals().take(limit).takeIf { it.isNotEmpty() } }
+    override suspend fun cheapestDeals(
+        origin: Airport,
+        limit: Int,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>> = respond {
+        FakeDealFixtures.deals()
+            .take(limit)
+            .map { if (tripType == TripType.ONE_WAY) it.copy(returnDate = null) else it }
+            .takeIf { it.isNotEmpty() }
+    }
 
     override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
         respond { FakeDealFixtures.monthlyPrices(route, month).takeIf { it.isNotEmpty() } }

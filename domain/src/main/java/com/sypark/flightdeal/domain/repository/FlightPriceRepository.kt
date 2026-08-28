@@ -5,6 +5,7 @@ import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import java.time.YearMonth
 
 /**
@@ -13,7 +14,11 @@ import java.time.YearMonth
 interface FlightPriceRepository {
 
     /** 출발지 기준 특가 목록. 홈 피드용. */
-    suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>>
+    suspend fun cheapestDeals(
+        origin: Airport,
+        limit: Int,
+        tripType: TripType,
+    ): AppResult<List<PriceQuote>>
 
     /** 한 노선·한 달의 날짜별 가격. */
     suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>>

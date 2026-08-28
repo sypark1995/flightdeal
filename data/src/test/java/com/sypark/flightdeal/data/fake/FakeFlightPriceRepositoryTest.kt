@@ -3,6 +3,7 @@ package com.sypark.flightdeal.data.fake
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import java.time.YearMonth
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -18,7 +19,7 @@ class FakeFlightPriceRepositoryTest {
     fun `기본 동작은 특가 목록을 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
-        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10, tripType = TripType.ROUND_TRIP)
 
         assertTrue(result is AppResult.Success)
         assertTrue((result as AppResult.Success).data.isNotEmpty())
@@ -28,7 +29,7 @@ class FakeFlightPriceRepositoryTest {
     fun `limit보다 많이 돌려주지 않는다`() = runTest {
         val repo = FakeFlightPriceRepository()
 
-        val result = repo.cheapestDeals(Airport.INCHEON, limit = 2)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 2, tripType = TripType.ROUND_TRIP)
 
         assertEquals(2, (result as AppResult.Success).data.size)
     }
@@ -37,7 +38,7 @@ class FakeFlightPriceRepositoryTest {
     fun `EmptyData 모드는 Empty를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.EmptyData)
 
-        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10, tripType = TripType.ROUND_TRIP)
 
         assertEquals(AppResult.Empty, result)
     }
@@ -46,7 +47,7 @@ class FakeFlightPriceRepositoryTest {
     fun `Failing 모드는 NetworkError를 돌려준다`() = runTest {
         val repo = FakeFlightPriceRepository(FakeFlightPriceRepository.Behavior.Failing)
 
-        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10)
+        val result = repo.cheapestDeals(Airport.INCHEON, limit = 10, tripType = TripType.ROUND_TRIP)
 
         assertTrue(result is AppResult.NetworkError)
     }

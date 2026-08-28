@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -39,7 +40,7 @@ class DealFeedViewModel @Inject constructor(
 
             // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
             _uiState.value = try {
-                when (val result = getDealFeed(Airport.INCHEON)) {
+                when (val result = getDealFeed(Airport.INCHEON, TripType.ROUND_TRIP)) {
                     is AppResult.Success -> DealFeedUiState.Success(result.data)
                     AppResult.Empty -> DealFeedUiState.Empty
                     is AppResult.NetworkError -> {

@@ -6,6 +6,7 @@ import com.sypark.flightdeal.domain.model.DealItem
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -18,8 +19,12 @@ class GetDealFeedUseCase @Inject constructor(
     private val calculateDiscount: CalculateDiscountUseCase,
 ) {
 
-    suspend operator fun invoke(origin: Airport, limit: Int = DEFAULT_LIMIT): AppResult<List<DealItem>> {
-        return when (val deals = repository.cheapestDeals(origin, limit)) {
+    suspend operator fun invoke(
+        origin: Airport,
+        tripType: TripType,
+        limit: Int = DEFAULT_LIMIT,
+    ): AppResult<List<DealItem>> {
+        return when (val deals = repository.cheapestDeals(origin, limit, tripType)) {
             is AppResult.Success -> AppResult.Success(attachDiscounts(deals.data))
             AppResult.Empty -> AppResult.Empty
             is AppResult.NetworkError -> deals

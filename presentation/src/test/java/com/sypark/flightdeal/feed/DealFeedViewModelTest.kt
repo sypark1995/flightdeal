@@ -7,6 +7,7 @@ import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
+import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import com.sypark.flightdeal.domain.usecase.CalculateDiscountUseCase
@@ -102,7 +103,11 @@ class DealFeedViewModelTest {
         var calls = 0
             private set
 
-        override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> {
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> {
             val current = ++calls
             delay(if (current == 1) 1_000L else 10L)
             return AppResult.Success(listOf(quote(100_000 * current)))
@@ -116,8 +121,11 @@ class DealFeedViewModelTest {
     }
 
     private class ThrowingRepository : FlightPriceRepository {
-        override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-            throw IOException("boom")
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> = throw IOException("boom")
 
         override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
             AppResult.Empty
@@ -127,8 +135,11 @@ class DealFeedViewModelTest {
     }
 
     private class UnknownErrorRepository : FlightPriceRepository {
-        override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-            AppResult.Unknown(IllegalStateException("boom"))
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> = AppResult.Unknown(IllegalStateException("boom"))
 
         override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
             AppResult.Empty
