@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sypark.flightdeal.feed.DealFeedScreen
+import com.sypark.flightdeal.tracking.TrackingScreen
 import com.sypark.flightdeal.ui.theme.Background
 import com.sypark.flightdeal.ui.theme.Indigo
 import com.sypark.flightdeal.ui.theme.TextSecondary
@@ -68,7 +69,7 @@ fun FlightDealNavHost() {
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(Tab.Deals.route) { DealFeedScreen() }
-            composable(Tab.Tracking.route) { PlaceholderScreen() }
+            composable(Tab.Tracking.route) { TrackingScreen() }
             composable(Tab.Search.route) { PlaceholderScreen() }
             composable(Tab.Profile.route) { PlaceholderScreen() }
         }
