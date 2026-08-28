@@ -1412,6 +1412,7 @@ import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.Won
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
  * 개발·테스트용 고정 데이터. 실제 API 연동 전까지 화면을 채운다.
@@ -1441,16 +1442,23 @@ object FakeDealFixtures {
         )
     }
 
-    /** 한 노선의 한 달치 가격. 중앙값이 특가보다 확실히 높도록 구성한다. */
-    fun monthlyPrices(route: Route): List<PriceQuote> {
+    /**
+     * 한 노선의 한 달치 가격. 중앙값이 특가보다 확실히 높도록 구성한다.
+     *
+     * [month]를 실제로 반영한다. 요청한 달과 무관하게 같은 데이터를 돌려주면
+     * 캘린더의 달 이동이 동작하는지 테스트로 확인할 수 없다.
+     */
+    fun monthlyPrices(route: Route, month: YearMonth): List<PriceQuote> {
         val base = DESTINATIONS.firstOrNull { it.first.iata == route.destination.iata }?.second
             ?: return emptyList()
-        return (1..28).map { day ->
+        return (1..month.lengthOfMonth()).map { day ->
+            val departDate = month.atDay(day)
             PriceQuote(
                 route = route,
-                departDate = LocalDate.of(2026, 10, day),
-                returnDate = LocalDate.of(2026, 10, day).plusDays(4),
-                // 특가(base)의 1.2배 ~ 1.9배 사이에서 흔들리게 만든다.
+                departDate = departDate,
+                returnDate = departDate.plusDays(4),
+                // 특가(base)의 1.2배 ~ 1.9배 사이에서 흔들리게 만든다. 중앙값은 약 1.53배가 되어
+                // 특가에 35% 안팎의 할인 배지가 붙는다.
                 price = Won(base * (120 + (day * 27) % 70) / 100),
                 airline = AIRLINES[day % AIRLINES.size],
                 foundAt = Instant.parse("2026-08-28T00:00:00Z"),
@@ -1490,34 +1498,35 @@ class FakeFlightPriceRepository(
     enum class Behavior { Normal, EmptyData, Failing }
 
     override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-        respond { FakeDealFixtures.deals().take(limit) }
+        respond { FakeDealFixtures.deals().take(limit).takeIf { it.isNotEmpty() } }
 
     override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
-        respond { FakeDealFixtures.monthlyPrices(route) }
+        respond { FakeDealFixtures.monthlyPrices(route, month).takeIf { it.isNotEmpty() } }
 
-    override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> {
-        val prices = FakeDealFixtures.monthlyPrices(route).map { it.price }
-        return when (behavior) {
-            Behavior.Failing -> AppResult.NetworkError(IOException("fake network failure"))
-            Behavior.EmptyData -> AppResult.Empty
-            Behavior.Normal -> PriceStats.from(prices)
-                ?.let { AppResult.Success(it) }
-                ?: AppResult.Empty
-        }
-    }
+    override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        respond { PriceStats.from(FakeDealFixtures.monthlyPrices(route, month).map { it.price }) }
 
-    private suspend fun <T> respond(block: () -> List<T>): AppResult<List<T>> {
+    /**
+     * 세 조회가 모두 같은 지연과 같은 [Behavior] 규칙을 거치도록 한 곳에 모은다.
+     * 한 메서드만 지연을 건너뛰면 로딩 상태를 다루는 테스트가 조용히 어긋난다.
+     *
+     * @param produce 결과가 없으면 null을 돌려준다. 그러면 [AppResult.Empty]가 된다.
+     */
+    private suspend fun <T : Any> respond(produce: () -> T?): AppResult<T> {
         delay(NETWORK_DELAY_MS)
         return when (behavior) {
             Behavior.Failing -> AppResult.NetworkError(IOException("fake network failure"))
             Behavior.EmptyData -> AppResult.Empty
-            Behavior.Normal -> block().let { if (it.isEmpty()) AppResult.Empty else AppResult.Success(it) }
+            Behavior.Normal -> produce()?.let { AppResult.Success(it) } ?: AppResult.Empty
         }
     }
 
     private companion object {
-        /** 로딩 상태가 실제로 보이도록 약간의 지연을 준다. runTest에서는 즉시 건너뛴다. */
-        const val NETWORK_DELAY_MS = 400L
+        /**
+         * 로딩 상태가 실제로 보이도록 약간의 지연을 준다. runTest에서는 즉시 건너뛴다.
+         * 피드 한 번에 조회가 1 + 딜 개수만큼 일어나므로 값을 키우면 체감이 급격히 나빠진다.
+         */
+        const val NETWORK_DELAY_MS = 150L
     }
 }
 ```
