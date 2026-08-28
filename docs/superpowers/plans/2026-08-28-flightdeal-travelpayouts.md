@@ -87,6 +87,7 @@ gson = "2.11.0"
 - Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/FlightPriceRepository.kt`
 - Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/GetDealFeedUseCase.kt`
 - Modify: `data/src/main/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepository.kt`
+- Modify: `data/src/test/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepositoryTest.kt` (호출 4곳에 `tripType = TripType.ROUND_TRIP` 추가)
 - Modify: `domain/src/test/java/com/sypark/flightdeal/domain/usecase/GetDealFeedUseCaseTest.kt`
 - Modify: `presentation/src/test/java/com/sypark/flightdeal/feed/DealFeedViewModelTest.kt`
 - Modify: `presentation/src/main/java/com/sypark/flightdeal/feed/DealFeedViewModel.kt`
