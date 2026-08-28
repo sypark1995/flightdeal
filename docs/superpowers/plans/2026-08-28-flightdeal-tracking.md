@@ -497,8 +497,10 @@ interface PriceSnapshotDao {
     fun observeFor(trackedRouteId: Long, sinceEpochSecond: Long): Flow<List<PriceSnapshotEntity>>
 
     @Query(
+        // capturedAt은 초 단위라 같은 초에 들어간 두 행의 순서가 정해지지 않는다.
+        // id로 타이브레이크해서 항상 나중에 넣은 것이 최근이 되게 한다.
         "SELECT * FROM price_snapshot WHERE trackedRouteId = :trackedRouteId " +
-            "ORDER BY capturedAt DESC LIMIT 1"
+            "ORDER BY capturedAt DESC, id DESC LIMIT 1"
     )
     suspend fun latestFor(trackedRouteId: Long): PriceSnapshotEntity?
 
@@ -998,6 +1000,7 @@ class RoomTrackedRouteRepositoryTest {
 ```kotlin
 package com.sypark.flightdeal.data.local
 
+import android.util.Log
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 import com.sypark.flightdeal.data.remote.AirportNames
 import com.sypark.flightdeal.domain.model.Airport
@@ -1018,9 +1021,9 @@ class RoomTrackedRouteRepository(
 ) : TrackedRouteRepository {
 
     override fun observeAll(): Flow<List<TrackedRoute>> =
-        dao.observeAll().map { entities -> entities.map { it.toDomain() } }
+        dao.observeAll().map { entities -> entities.mapNotNull { it.toDomain() } }
 
-    override suspend fun getAll(): List<TrackedRoute> = dao.getAll().map { it.toDomain() }
+    override suspend fun getAll(): List<TrackedRoute> = dao.getAll().mapNotNull { it.toDomain() }
 
     override suspend fun add(
         route: Route,
@@ -1046,8 +1049,9 @@ class RoomTrackedRouteRepository(
      * DB에는 IATA만 저장한다. 도시 이름은 표시용이므로 읽을 때 채운다 —
      * 이름이 바뀌어도 저장된 데이터를 건드릴 일이 없다.
      */
-    private fun TrackedRouteEntity.toDomain() = TrackedRoute(
-        id = id,
+    private fun TrackedRouteEntity.toDomain(): TrackedRoute? = runCatching {
+        TrackedRoute(
+            id = id,
         route = Route(
             origin = Airport(originIata, AirportNames.cityOf(originIata), ""),
             destination = Airport(destinationIata, AirportNames.cityOf(destinationIata), ""),
@@ -1056,8 +1060,13 @@ class RoomTrackedRouteRepository(
         returnDate = returnDate?.let(LocalDate::parse),
         tripType = TripType.valueOf(tripType),
         targetPrice = targetPrice?.let(::Won),
-        createdAt = Instant.ofEpochSecond(createdAt),
-    )
+            createdAt = Instant.ofEpochSecond(createdAt),
+        )
+    }.onFailure { Log.w(TAG, "읽을 수 없는 추적 항목을 건너뛴다: id=$id", it) }.getOrNull()
+
+    private companion object {
+        const val TAG = "TrackedRoutes"
+    }
 }
 ```
 
@@ -1070,6 +1079,7 @@ import com.sypark.flightdeal.data.local.entity.PriceSnapshotEntity
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
+import android.util.Log
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -1094,21 +1104,35 @@ class RoomPriceHistoryRepository(
         dao.latestFor(trackedRouteId)?.toDomain()
 
     override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
-        dao.observeFor(trackedRouteId, cutoff(days)).map { list -> list.map { it.toDomain() } }
+        dao.observeFor(trackedRouteId, cutoff(days)).map { list -> list.mapNotNull { it.toDomain() } }
 
     override suspend fun pruneOlderThan(days: Int) = dao.deleteOlderThan(cutoff(days))
 
-    private fun cutoff(days: Int): Long =
-        clock.instant().epochSecond - days.toLong() * SECONDS_PER_DAY
+    /**
+     * 음수를 받으면 기준 시각이 미래가 되고, `capturedAt < 미래`는 모든 행에 참이라
+     * 이력 전체가 지워진다. 조용히 0으로 보정하면 부르는 쪽의 계산 실수가 숨는다.
+     */
+    private fun cutoff(days: Int): Long {
+        require(days >= 0) { "days는 음수일 수 없다: $days" }
+        return clock.instant().epochSecond - days.toLong() * SECONDS_PER_DAY
+    }
 
-    private fun PriceSnapshotEntity.toDomain() = PriceSnapshot(
-        trackedRouteId = trackedRouteId,
-        price = Won(price),
-        tripType = TripType.valueOf(tripType),
-        capturedAt = Instant.ofEpochSecond(capturedAt),
-    )
+    /**
+     * 읽을 수 없는 행은 버린다. `TripType.valueOf`는 모르는 이름에 예외를 던지는데,
+     * 그게 `map` 안에서 터지면 행 하나 때문에 목록 전체가 죽는다 —
+     * 열거형 값을 바꾸거나 앱 버전이 섞이면 실제로 일어난다.
+     */
+    private fun PriceSnapshotEntity.toDomain(): PriceSnapshot? = runCatching {
+        PriceSnapshot(
+            trackedRouteId = trackedRouteId,
+            price = Won(price),
+            tripType = TripType.valueOf(tripType),
+            capturedAt = Instant.ofEpochSecond(capturedAt),
+        )
+    }.onFailure { Log.w(TAG, "읽을 수 없는 스냅샷을 건너뛴다: id=$id", it) }.getOrNull()
 
     private companion object {
+        const val TAG = "PriceHistory"
         const val SECONDS_PER_DAY = 86_400L
     }
 }
