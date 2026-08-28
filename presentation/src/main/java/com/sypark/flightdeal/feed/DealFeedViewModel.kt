@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.DealItem
+import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import com.sypark.flightdeal.domain.usecase.TrackRouteUseCase
@@ -34,6 +35,18 @@ class DealFeedViewModel @Inject constructor(
     val tripType: StateFlow<TripType> = _tripType.asStateFlow()
 
     /**
+     * 지금 화면에 떠 있는 목록이 실제로 어떤 여정 종류의 결과인지.
+     *
+     * `_tripType`은 토글을 누른 순간 바뀌지만, 목록은 "이미 보여줄 데이터가 있으면
+     * Loading으로 되돌리지 않는다" 정책 때문에 새 조회가 끝날 때까지 이전 종류
+     * 그대로 화면에 남는다. 그 사이 토글이 다시 실패해 되돌아갈 곳은 "마지막으로
+     * 탭한 값"이 아니라 "지금 화면이 들고 있는 데이터의 종류"다 — 탭을 연타하면
+     * 이 둘은 서로 다른 값이 된다. 그래서 탭 시점의 값을 캡처해 되돌리지 않고,
+     * 요청이 성공해 화면에 실제로 반영됐을 때만 이 값을 갱신한다.
+     */
+    private var loadedTripType = TripType.ROUND_TRIP
+
+    /**
      * 일회성 안내. `StateFlow`로 두면 화면 회전 때 같은 메시지가 다시 뜬다 —
      * 마지막 값을 replay하기 때문이다. `Channel`은 한 번 받으면 사라진다.
      */
@@ -49,14 +62,13 @@ class DealFeedViewModel @Inject constructor(
     /** 같은 값이면 조회하지 않는다. 토글을 두 번 눌렀다고 왕복을 다시 받을 이유가 없다. */
     fun setTripType(tripType: TripType) {
         if (_tripType.value == tripType) return
-        val previous = _tripType.value
         _tripType.value = tripType
-        load(revertTripTypeTo = previous)
+        load()
     }
 
-    fun refresh() = load(revertTripTypeTo = null)
+    fun refresh() = load()
 
-    private fun load(revertTripTypeTo: TripType?) {
+    private fun load() {
         // 재시도 버튼을 연타하면 느린 이전 요청이 나중에 끝나 최신 결과를 덮어쓴다.
         // 결과만 버리는 게 아니라 요청 자체를 취소한다. 버릴 응답을 받자고
         // 네트워크와 배터리를 쓸 이유가 없다.
@@ -66,11 +78,16 @@ class DealFeedViewModel @Inject constructor(
             // 보여주던 상태에서 뒤로 가지 않는다 — 스켈레톤이 떴다가 목록이 돌아오는
             // 깜빡임도 막는다.
             val hadData = _uiState.value is DealFeedUiState.Success
+
+            // 이번 요청이 어떤 종류를 조회하는지 시작 시점에 고정한다. _tripType은
+            // 이 코루틴이 도는 동안에도 다시 바뀔 수 있어, 나중에 다시 읽으면
+            // 이 요청이 실제로 물어본 종류가 아닐 수 있다.
+            val requestedTripType = _tripType.value
             if (!hadData) _uiState.value = DealFeedUiState.Loading
 
             // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
             val nextState = try {
-                when (val result = getDealFeed(Airport.INCHEON, _tripType.value)) {
+                when (val result = getDealFeed(Airport.INCHEON, requestedTripType)) {
                     is AppResult.Success -> DealFeedUiState.Success(result.data)
                     AppResult.Empty -> DealFeedUiState.Empty
                     is AppResult.NetworkError -> {
@@ -97,31 +114,51 @@ class DealFeedViewModel @Inject constructor(
             // 유지하고(빈 결과로 덮지 않는다), 없었다면 Empty 화면이 맞다.
             when {
                 hadData && nextState is DealFeedUiState.Error -> {
-                    revertTripType(revertTripTypeTo)
+                    revertTripType()
                     _messages.send("가격을 새로 받아오지 못했어요")
                 }
-                hadData && nextState is DealFeedUiState.Empty -> revertTripType(revertTripTypeTo)
-                else -> _uiState.value = nextState
+                hadData && nextState is DealFeedUiState.Empty -> revertTripType()
+                else -> {
+                    _uiState.value = nextState
+                    // 화면에 실제로 반영된 요청의 종류로만 갱신한다 — 실패한 요청이
+                    // 물어봤던 종류로 갱신하면 [revertTripType]이 되돌릴 기준 자체가
+                    // 틀어진다.
+                    if (nextState is DealFeedUiState.Success) loadedTripType = requestedTripType
+                }
             }
         }
     }
 
     /**
-     * 목록을 갱신하지 못했으면 토글도 누르기 전으로 되돌린다.
+     * 목록을 갱신하지 못했으면 토글을 "지금 화면이 들고 있는 데이터의 종류"로 되돌린다.
      *
-     * 목록은 유지하면서 토글만 새 값으로 두면 화면이 "편도"라고 말하면서 왕복 가격을
-     * 보여준다. 표시가 어긋나는 데서 끝나지 않는다 — [track]이 이 값으로 등록하므로
-     * 왕복 견적이 편도로 저장되고, 이후 그 추적 항목의 변동 판정이 전부 어긋난다.
+     * 마지막으로 탭한 값으로 되돌리지 않는다. 토글을 연달아 누르면 탭 시점의 값과
+     * 화면에 실제로 남아 있는 데이터의 종류가 서로 달라질 수 있어서다. 목록은 유지하면서
+     * 토글만 어긋난 값으로 두면 화면이 "편도"라고 말하면서 왕복 가격을 보여준다.
+     * 표시가 어긋나는 데서 끝나지 않는다 — [track]이 이제는 견적 자체에서 종류를
+     * 읽지만, 그래도 화면 표시와 실제 데이터가 다르면 사용자가 보고 판단하는 근거가 어긋난다.
      */
-    private fun revertTripType(to: TripType?) {
-        if (to != null) _tripType.value = to
+    private fun revertTripType() {
+        _tripType.value = loadedTripType
     }
 
-    /** 지금 화면이 보여주는 여정 종류로 등록한다. 화면과 다른 종류로 저장하면 이후 비교가 어긋난다. */
+    /**
+     * 견적 자체가 말하는 여정 종류로 등록한다. 화면 토글([_tripType])을 읽지 않는다.
+     *
+     * `_tripType`은 토글을 누른 즉시 바뀌지만, "이미 보여줄 데이터가 있으면 Loading으로
+     * 되돌리지 않는다" 정책 때문에 목록은 새 조회가 끝날 때까지 이전 종류 그대로 화면에
+     * 남는다. 그 사이 사용자가 카드를 눌러 추적을 시작하면, 그 카드가 들고 있는
+     * [PriceQuote]는 이전 조회 결과인데 [_tripType]은 이미 다음 값이라 서로 어긋난다.
+     * 이 상태에서 화면 토글을 기준으로 등록하면, 왕복 견적이 편도로(또는 그 반대로)
+     * 저장되어 `returnDate`와 `tripType`이 서로 모순된 행이 만들어지고, 이후 폴링이
+     * 요청하는 종류와 등록된 종류가 달라 스냅샷이 영원히 쌓이지 않는다.
+     * `returnDate`의 유무는 조회 순간과 무관하게 이 견적이 실제로 왕복인지 편도인지를
+     * 그대로 말해주는 값이라 여기서는 이것을 유일한 근거로 삼는다.
+     */
     fun track(item: DealItem) {
         viewModelScope.launch {
             try {
-                val registration = trackRoute(item.quote, _tripType.value)
+                val registration = trackRoute(item.quote, item.quote.impliedTripType())
                 _messages.send(if (registration.isNew) "추적을 시작했어요" else "이미 추적 중이에요")
             } catch (e: CancellationException) {
                 throw e
@@ -138,3 +175,14 @@ class DealFeedViewModel @Inject constructor(
         const val TAG = "DealFeed"
     }
 }
+
+/**
+ * [PriceQuote]가 실제로 어떤 여정 종류인지: 귀국일이 있으면 왕복, 없으면 편도.
+ *
+ * 화면 상태(토글, `_tripType`)는 사용자가 탭한 순간 바뀌지만 그 값이 가리키는
+ * 데이터가 아직 화면에 도착하지 않았을 수 있다. 반면 `returnDate`는 그 견적을
+ * 만들어낸 실제 조회의 결과이므로 언제 읽어도 어긋나지 않는다 — 추적 등록처럼
+ * "이 견적이 진짜로 무엇인지"가 중요한 곳에서는 화면이 아니라 이 값을 근거로 삼는다.
+ */
+private fun PriceQuote.impliedTripType(): TripType =
+    if (returnDate != null) TripType.ROUND_TRIP else TripType.ONE_WAY

@@ -217,6 +217,32 @@ class TravelpayoutsFlightPriceRepositoryTest {
     }
 
     @Test
+    fun `그 날의 유일한 예약처가 CIS 예약처면 그 날은 비운다`() = runTest {
+        // 10/06은 Kupi.com(CIS)뿐이고, 10/07은 Trip.com이 있다. 예약처 규칙을
+        // 날짜별로 적용하면 10/06은 그 날 유일한 항목이라는 이유로 폴백이 걸려
+        // 그대로 노출된다. 규칙을 달 전체에 먼저 적용하면, 이 달에 Trip.com이
+        // 있으므로 폴백이 걸리지 않고 10/06은 후보에서 아예 빠져야 한다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-07T15:15:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val deals = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        // 10/06 자리는 비어야 한다 — 한국에서 예약할 수 없는 곳뿐인 날에 값을
+        // 채우면 사용자가 예약을 완료할 수 없는 페이지로 들어간다.
+        assertEquals(1, deals.size)
+        assertEquals(LocalDate.of(2026, 10, 7), deals.first().departDate)
+    }
+
+    @Test
     fun `캘린더 딜은 날짜당 한 건만 남긴다`() = runTest {
         enqueueFixture("v3-ICN-TYO.json")
 
