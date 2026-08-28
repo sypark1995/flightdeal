@@ -30,7 +30,12 @@ class CheckTrackedPricesUseCase @Inject constructor(
 
         // 출발일이 지난 노선은 조회하지 않는다. 소스가 지난 날짜에 아무것도 주지
         // 않아 매번 헛돌고 API 쿼터만 쓴다. 오늘 출발은 아직 탈 수 있으므로 남긴다.
-        val today = LocalDate.ofInstant(clock.instant(), clock.zone)
+        //
+        // `LocalDate.ofInstant`를 쓰면 안 된다. 그건 API 34부터라서 minSdk 26인
+        // 이 앱에서는 안드로이드 13 이하 전 기기가 워커를 돌릴 때마다
+        // NoSuchMethodError로 죽는다. 이 모듈은 순수 JVM이라 JDK에서는 존재하고,
+        // 테스트도 린트도 잡지 못한다 — 기기에서만 드러난다.
+        val today = LocalDate.now(clock)
         return trackedRoutes.getAll()
             .filterNot { it.hasDeparted(today) }
             .mapNotNull { tracked -> check(tracked) }
