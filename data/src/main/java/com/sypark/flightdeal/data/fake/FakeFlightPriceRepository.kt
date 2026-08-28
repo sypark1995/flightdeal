@@ -21,7 +21,7 @@ class FakeFlightPriceRepository(
     private val behavior: Behavior = Behavior.Normal,
 ) : FlightPriceRepository {
 
-    enum class Behavior { Normal, EmptyData, Failing }
+    enum class Behavior { Normal, EmptyData, Failing, Unauthorized }
 
     override suspend fun cheapestDeals(
         origin: Airport,
@@ -72,6 +72,7 @@ class FakeFlightPriceRepository(
         delay(NETWORK_DELAY_MS)
         return when (behavior) {
             Behavior.Failing -> AppResult.NetworkError(IOException("fake network failure"))
+            Behavior.Unauthorized -> AppResult.Unknown(IllegalStateException("fake unauthorized"))
             Behavior.EmptyData -> AppResult.Empty
             Behavior.Normal -> produce()?.let { AppResult.Success(it) } ?: AppResult.Empty
         }

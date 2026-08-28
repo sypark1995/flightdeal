@@ -85,6 +85,18 @@ class DealFeedViewModelTest {
         }
     }
 
+    @Test
+    fun `인증 실패는 재시도 불가 오류가 된다`() = runTest {
+        viewModel(FakeFlightPriceRepository.Behavior.Unauthorized).uiState.test {
+            assertEquals(DealFeedUiState.Loading, awaitItem())
+
+            val state = awaitItem()
+            assertTrue(state is DealFeedUiState.Error)
+            // 토큰이 잘못됐으면 몇 번을 눌러도 같다. 재시도 버튼을 주면 안 된다.
+            assertFalse((state as DealFeedUiState.Error).retryable)
+        }
+    }
+
     private val tokyo = Airport("TYO", "도쿄", "일본")
     private val route = Route(Airport.INCHEON, tokyo)
 
