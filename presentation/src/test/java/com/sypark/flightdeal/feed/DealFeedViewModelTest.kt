@@ -568,4 +568,41 @@ class DealFeedViewModelTest {
             assertEquals("가격을 새로 받아오지 못했어요", awaitItem())
         }
     }
+
+    @Test
+    fun `여정 종류 변경이 실패하면 토글도 되돌린다`() = runTest {
+        // 토글만 바뀌고 목록은 이전 종류 그대로 남으면, 화면이 "편도"라고 말하면서
+        // 왕복 가격을 보여준다. 그 상태에서 추적을 누르면 왕복 견적이 편도로 저장돼
+        // 이후 변동 판정이 전부 어긋난다.
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+        advanceUntilIdle()
+        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
+
+        repository.nextResult = AppResult.NetworkError(IOException())
+        viewModel.setTripType(TripType.ONE_WAY)
+        advanceUntilIdle()
+
+        // 목록이 왕복 그대로 남았으니 토글도 왕복이어야 한다.
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
+    }
+
+    @Test
+    fun `여정 종류 변경이 성공하면 토글은 새 값을 유지한다`() = runTest {
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+        advanceUntilIdle()
+
+        viewModel.setTripType(TripType.ONE_WAY)
+        advanceUntilIdle()
+
+        assertEquals(TripType.ONE_WAY, viewModel.tripType.value)
+    }
 }
