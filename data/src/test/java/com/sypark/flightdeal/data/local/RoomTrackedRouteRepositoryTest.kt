@@ -3,16 +3,19 @@ package com.sypark.flightdeal.data.local
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -147,5 +150,38 @@ class RoomTrackedRouteRepositoryTest {
         history.pruneOlderThan(days = 90)
 
         assertEquals(1, history.observeHistory(id, days = 365).first().size)
+    }
+
+    @Test
+    fun `음수 보관 기간은 거부한다`() = runTest {
+        val id = addTokyo()
+        history.append(PriceSnapshot(id, Won(300_000), TripType.ROUND_TRIP, clock.instant()))
+
+        // 음수를 그대로 받으면 기준 시각이 미래가 되어 이력 전체가 지워진다.
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { history.pruneOlderThan(days = -1) }
+        }
+        assertEquals(1, history.observeHistory(id, days = 365).first().size)
+    }
+
+    @Test
+    fun `읽을 수 없는 행이 있어도 나머지는 돌려준다`() = runTest {
+        val good = addTokyo()
+        db.trackedRouteDao().insert(
+            TrackedRouteEntity(
+                originIata = "ICN",
+                destinationIata = "BKK",
+                departDate = "not-a-date",
+                returnDate = null,
+                tripType = "ROUND_TRIP",
+                targetPrice = null,
+                createdAt = 1_800_000_000L,
+            )
+        )
+
+        // 행 하나가 망가졌다고 추적 화면 전체가 열리지 않으면 안 된다.
+        val saved = tracked.observeAll().first()
+        assertEquals(1, saved.size)
+        assertEquals(good, saved.single().id)
     }
 }

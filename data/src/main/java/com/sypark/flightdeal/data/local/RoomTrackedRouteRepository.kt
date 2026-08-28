@@ -1,5 +1,6 @@
 package com.sypark.flightdeal.data.local
 
+import android.util.Log
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 import com.sypark.flightdeal.data.remote.AirportNames
 import com.sypark.flightdeal.domain.model.Airport
@@ -20,9 +21,9 @@ class RoomTrackedRouteRepository(
 ) : TrackedRouteRepository {
 
     override fun observeAll(): Flow<List<TrackedRoute>> =
-        dao.observeAll().map { entities -> entities.map { it.toDomain() } }
+        dao.observeAll().map { entities -> entities.mapNotNull { it.toDomain() } }
 
-    override suspend fun getAll(): List<TrackedRoute> = dao.getAll().map { it.toDomain() }
+    override suspend fun getAll(): List<TrackedRoute> = dao.getAll().mapNotNull { it.toDomain() }
 
     override suspend fun add(
         route: Route,
@@ -47,17 +48,27 @@ class RoomTrackedRouteRepository(
     /**
      * DB에는 IATA만 저장한다. 도시 이름은 표시용이므로 읽을 때 채운다 —
      * 이름이 바뀌어도 저장된 데이터를 건드릴 일이 없다.
+     *
+     * 읽을 수 없는 행은 버린다. `TripType.valueOf`와 `LocalDate.parse`는
+     * 예상 밖 값에 예외를 던지는데, 그게 `map` 안에서 터지면 행 하나 때문에
+     * 추적 화면 전체를 열 수 없게 된다.
      */
-    private fun TrackedRouteEntity.toDomain() = TrackedRoute(
-        id = id,
-        route = Route(
-            origin = Airport(originIata, AirportNames.cityOf(originIata), ""),
-            destination = Airport(destinationIata, AirportNames.cityOf(destinationIata), ""),
-        ),
-        departDate = LocalDate.parse(departDate),
-        returnDate = returnDate?.let(LocalDate::parse),
-        tripType = TripType.valueOf(tripType),
-        targetPrice = targetPrice?.let(::Won),
-        createdAt = Instant.ofEpochSecond(createdAt),
-    )
+    private fun TrackedRouteEntity.toDomain(): TrackedRoute? = runCatching {
+        TrackedRoute(
+            id = id,
+            route = Route(
+                origin = Airport(originIata, AirportNames.cityOf(originIata), ""),
+                destination = Airport(destinationIata, AirportNames.cityOf(destinationIata), ""),
+            ),
+            departDate = LocalDate.parse(departDate),
+            returnDate = returnDate?.let(LocalDate::parse),
+            tripType = TripType.valueOf(tripType),
+            targetPrice = targetPrice?.let(::Won),
+            createdAt = Instant.ofEpochSecond(createdAt),
+        )
+    }.onFailure { Log.w(TAG, "읽을 수 없는 추적 항목을 건너뛴다: id=$id", it) }.getOrNull()
+
+    private companion object {
+        const val TAG = "TrackedRoutes"
+    }
 }

@@ -19,8 +19,10 @@ interface PriceSnapshotDao {
     fun observeFor(trackedRouteId: Long, sinceEpochSecond: Long): Flow<List<PriceSnapshotEntity>>
 
     @Query(
+        // capturedAt은 초 단위라 같은 초에 들어간 두 행의 순서가 정해지지 않는다.
+        // id로 타이브레이크해서 항상 나중에 넣은 것이 최근이 되게 한다.
         "SELECT * FROM price_snapshot WHERE trackedRouteId = :trackedRouteId " +
-            "ORDER BY capturedAt DESC LIMIT 1"
+            "ORDER BY capturedAt DESC, id DESC LIMIT 1"
     )
     suspend fun latestFor(trackedRouteId: Long): PriceSnapshotEntity?
 
