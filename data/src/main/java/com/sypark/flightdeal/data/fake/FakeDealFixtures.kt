@@ -6,6 +6,7 @@ import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.Won
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
  * 개발·테스트용 고정 데이터. 실제 API 연동 전까지 화면을 채운다.
@@ -35,16 +36,23 @@ object FakeDealFixtures {
         )
     }
 
-    /** 한 노선의 한 달치 가격. 중앙값이 특가보다 확실히 높도록 구성한다. */
-    fun monthlyPrices(route: Route): List<PriceQuote> {
+    /**
+     * 한 노선의 한 달치 가격. 중앙값이 특가보다 확실히 높도록 구성한다.
+     *
+     * [month]를 실제로 반영한다. 요청한 달과 무관하게 같은 데이터를 돌려주면
+     * 캘린더의 달 이동이 동작하는지 테스트로 확인할 수 없다.
+     */
+    fun monthlyPrices(route: Route, month: YearMonth): List<PriceQuote> {
         val base = DESTINATIONS.firstOrNull { it.first.iata == route.destination.iata }?.second
             ?: return emptyList()
-        return (1..28).map { day ->
+        return (1..month.lengthOfMonth()).map { day ->
+            val departDate = month.atDay(day)
             PriceQuote(
                 route = route,
-                departDate = LocalDate.of(2026, 10, day),
-                returnDate = LocalDate.of(2026, 10, day).plusDays(4),
-                // 특가(base)의 1.2배 ~ 1.9배 사이에서 흔들리게 만든다.
+                departDate = departDate,
+                returnDate = departDate.plusDays(4),
+                // 특가(base)의 1.2배 ~ 1.9배 사이에서 흔들리게 만든다. 중앙값은 약 1.53배가 되어
+                // 특가에 35% 안팎의 할인 배지가 붙는다.
                 price = Won(base * (120 + (day * 27) % 70) / 100),
                 airline = AIRLINES[day % AIRLINES.size],
                 foundAt = Instant.parse("2026-08-28T00:00:00Z"),

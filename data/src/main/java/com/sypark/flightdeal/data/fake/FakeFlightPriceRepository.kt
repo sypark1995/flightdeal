@@ -22,33 +22,34 @@ class FakeFlightPriceRepository(
     enum class Behavior { Normal, EmptyData, Failing }
 
     override suspend fun cheapestDeals(origin: Airport, limit: Int): AppResult<List<PriceQuote>> =
-        respond { FakeDealFixtures.deals().take(limit) }
+        respond { FakeDealFixtures.deals().take(limit).takeIf { it.isNotEmpty() } }
 
     override suspend fun calendarPrices(route: Route, month: YearMonth): AppResult<List<PriceQuote>> =
-        respond { FakeDealFixtures.monthlyPrices(route) }
+        respond { FakeDealFixtures.monthlyPrices(route, month).takeIf { it.isNotEmpty() } }
 
-    override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> {
-        val prices = FakeDealFixtures.monthlyPrices(route).map { it.price }
-        return when (behavior) {
-            Behavior.Failing -> AppResult.NetworkError(IOException("fake network failure"))
-            Behavior.EmptyData -> AppResult.Empty
-            Behavior.Normal -> PriceStats.from(prices)
-                ?.let { AppResult.Success(it) }
-                ?: AppResult.Empty
-        }
-    }
+    override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> =
+        respond { PriceStats.from(FakeDealFixtures.monthlyPrices(route, month).map { it.price }) }
 
-    private suspend fun <T> respond(block: () -> List<T>): AppResult<List<T>> {
+    /**
+     * 세 조회가 모두 같은 지연과 같은 [Behavior] 규칙을 거치도록 한 곳에 모은다.
+     * 한 메서드만 지연을 건너뛰면 로딩 상태를 다루는 테스트가 조용히 어긋난다.
+     *
+     * @param produce 결과가 없으면 null을 돌려준다. 그러면 [AppResult.Empty]가 된다.
+     */
+    private suspend fun <T : Any> respond(produce: () -> T?): AppResult<T> {
         delay(NETWORK_DELAY_MS)
         return when (behavior) {
             Behavior.Failing -> AppResult.NetworkError(IOException("fake network failure"))
             Behavior.EmptyData -> AppResult.Empty
-            Behavior.Normal -> block().let { if (it.isEmpty()) AppResult.Empty else AppResult.Success(it) }
+            Behavior.Normal -> produce()?.let { AppResult.Success(it) } ?: AppResult.Empty
         }
     }
 
     private companion object {
-        /** 로딩 상태가 실제로 보이도록 약간의 지연을 준다. runTest에서는 즉시 건너뛴다. */
-        const val NETWORK_DELAY_MS = 400L
+        /**
+         * 로딩 상태가 실제로 보이도록 약간의 지연을 준다. runTest에서는 즉시 건너뛴다.
+         * 피드 한 번에 조회가 1 + 딜 개수만큼 일어나므로 값을 키우면 체감이 급격히 나빠진다.
+         */
+        const val NETWORK_DELAY_MS = 150L
     }
 }
