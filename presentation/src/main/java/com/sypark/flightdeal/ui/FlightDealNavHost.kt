@@ -87,7 +87,17 @@ fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow
             startDestination = Tab.Deals.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(Tab.Deals.route) { DealFeedScreen() }
+            composable(Tab.Deals.route) {
+                DealFeedScreen(
+                    onSearch = {
+                        navController.navigate(Tab.Search.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
+            }
             composable(Tab.Tracking.route) { TrackingScreen() }
             composable(Tab.Search.route) { CalendarScreen() }
             composable(Tab.Profile.route) { PlaceholderScreen() }

@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,6 +49,7 @@ import com.sypark.flightdeal.ui.theme.TextSecondary
 
 @Composable
 fun DealFeedScreen(
+    onSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DealFeedViewModel = hiltViewModel(),
 ) {
@@ -79,6 +82,10 @@ fun DealFeedScreen(
                 modifier = Modifier.padding(16.dp),
             )
 
+            // 입력창처럼 생겼으면 눌렀을 때 무언가 해야 한다. 목업에서 넘어온 채로
+            // 오래 장식으로만 남아 있었다 — 화면에서 가장 눈에 띄는 자리가
+            // 아무 일도 하지 않는 상태였다. 목적지를 고르는 화면은 달력이므로
+            // 그리로 보낸다.
             Text(
                 text = "어디로 떠나세요?",
                 color = TextSecondary,
@@ -86,9 +93,12 @@ fun DealFeedScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(onClick = onSearch)
                     .border(1.dp, Outline, RoundedCornerShape(16.dp))
                     .background(Surface, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 13.dp),
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 14.dp, vertical = 15.dp),
             )
 
             Text(
