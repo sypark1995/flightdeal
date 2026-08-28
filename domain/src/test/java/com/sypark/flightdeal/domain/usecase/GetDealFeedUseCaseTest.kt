@@ -33,15 +33,21 @@ class GetDealFeedUseCaseTest {
         deepLink = null,
     )
 
-    /** 테스트마다 응답을 지정할 수 있는 최소 스텁. */
+    /** 테스트마다 응답을 지정할 수 있는 최소 스텁. 분포 조회 횟수도 센다. */
     private class StubRepository(
         val deals: AppResult<List<PriceQuote>>,
         val stats: AppResult<PriceStats>,
     ) : FlightPriceRepository {
+        var priceStatsCalls = 0
+            private set
+
         override suspend fun cheapestDeals(origin: Airport, limit: Int) = deals
         override suspend fun calendarPrices(route: Route, month: YearMonth) =
             AppResult.Success(emptyList<PriceQuote>())
-        override suspend fun priceStats(route: Route, month: YearMonth) = stats
+        override suspend fun priceStats(route: Route, month: YearMonth): AppResult<PriceStats> {
+            priceStatsCalls++
+            return stats
+        }
     }
 
     @Test
@@ -91,5 +97,44 @@ class GetDealFeedUseCaseTest {
         val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
 
         assertTrue(useCase(incheon) is AppResult.NetworkError)
+    }
+
+    @Test
+    fun `알 수 없는 오류도 그대로 전달한다`() = runTest {
+        val repo = StubRepository(
+            deals = AppResult.Unknown(IllegalStateException("boom")),
+            stats = AppResult.Empty,
+        )
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        assertTrue(useCase(incheon) is AppResult.Unknown)
+    }
+
+    @Test
+    fun `딜이 여러 개면 각각에 할인율을 붙인다`() = runTest {
+        val repo = StubRepository(
+            deals = AppResult.Success(listOf(quote(189_000), quote(200_000), quote(210_000))),
+            stats = AppResult.Success(PriceStats(Won(305_000), Won(180_000), Won(400_000), 20)),
+        )
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        val result = useCase(incheon) as AppResult.Success
+
+        assertEquals(3, result.data.size)
+        assertTrue(result.data.all { it.discountPercent != null })
+    }
+
+    @Test
+    fun `같은 노선 같은 달은 분포를 한 번만 조회한다`() = runTest {
+        val repo = StubRepository(
+            deals = AppResult.Success(listOf(quote(189_000), quote(200_000), quote(210_000))),
+            stats = AppResult.Success(PriceStats(Won(305_000), Won(180_000), Won(400_000), 20)),
+        )
+        val useCase = GetDealFeedUseCase(repo, CalculateDiscountUseCase())
+
+        useCase(incheon)
+
+        // 세 딜이 모두 같은 노선·같은 달이다. 왕복을 세 번 할 이유가 없다.
+        assertEquals(1, repo.priceStatsCalls)
     }
 }
