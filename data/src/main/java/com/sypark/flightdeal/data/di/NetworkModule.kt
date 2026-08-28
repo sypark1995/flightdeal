@@ -1,5 +1,6 @@
 package com.sypark.flightdeal.data.di
 
+import android.util.Log
 import com.sypark.flightdeal.data.BuildConfig
 import com.sypark.flightdeal.data.remote.TravelpayoutsApi
 import dagger.Module
@@ -18,11 +19,12 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val BASE_URL = "https://api.travelpayouts.com/"
+    private const val TAG = "Travelpayouts"
 
     /**
-     * 피드 한 번에 (노선 수 + 1)개의 요청이 병렬로 나간다. limit 기본값이 20이므로
-     * 최대 21개다. 레이트 리밋이 걸린 API에 그대로 쏟으면 429를 맞는다.
-     * 동시 실행 상한은 HTTP 사정이므로 도메인이 아니라 여기서 조인다.
+     * 피드 한 번에 목적지 수만큼의 요청이 병렬로 나간다. 레이트 리밋이 걸린 API에
+     * 그대로 쏟으면 429를 맞는다. 동시 실행 상한은 HTTP 사정이므로 도메인이 아니라 여기서 조인다.
+     * (여기서 말하는 상한은 동시 연결 수이지, API의 `limit` 쿼리 파라미터와는 무관하다.)
      */
     private const val MAX_REQUESTS_PER_HOST = 4
 
@@ -42,8 +44,22 @@ object NetworkModule {
                 .build()
             chain.proceed(chain.request().newBuilder().url(url).build())
         }
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val startedAt = System.nanoTime()
+            val response = chain.proceed(request)
+            if (BuildConfig.DEBUG) {
+                // HttpLoggingInterceptor는 BASIC 레벨에서도 쿼리를 통째로 찍는다.
+                // 토큰이 쿼리에 실려 있으므로 직접 지운 URL만 남긴다.
+                val safeUrl = request.url.newBuilder().removeAllQueryParameters("token").build()
+                val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+                Log.d(TAG, "${request.method} $safeUrl → ${response.code} (${elapsedMs}ms)")
+            }
+            response
+        }
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(30, TimeUnit.SECONDS)
         .build()
 
     @Provides

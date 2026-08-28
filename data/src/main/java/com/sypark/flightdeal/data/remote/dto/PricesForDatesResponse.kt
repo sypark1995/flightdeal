@@ -30,5 +30,7 @@ data class PriceDto(
     @SerializedName("transfers") val transfers: Int? = null,
     @SerializedName("return_transfers") val returnTransfers: Int? = null,
     @SerializedName("duration") val duration: Int? = null,
+    @SerializedName("duration_to") val durationTo: Int? = null,
+    @SerializedName("duration_back") val durationBack: Int? = null,
     @SerializedName("link") val link: String? = null,
 )
