@@ -78,6 +78,8 @@ class TrackingViewModelTest {
         override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
             flowOf(snapshots)
         override suspend fun pruneOlderThan(days: Int) = Unit
+        override fun observeCount(): Flow<Int> = flowOf(snapshots.size)
+        override suspend fun clearAll() = Unit
     }
 
     // 기존 테스트의 tracked()는 2026-10-12 출발이다. 이보다 이른 고정 시각을 써서
@@ -175,6 +177,8 @@ class TrackingViewModelTest {
             override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
                 snapshots
             override suspend fun pruneOlderThan(days: Int) = Unit
+            override fun observeCount(): Flow<Int> = flowOf(0)
+            override suspend fun clearAll() = Unit
         }
 
         viewModel(FakeRoutes(listOf(tracked())), history).uiState.test {

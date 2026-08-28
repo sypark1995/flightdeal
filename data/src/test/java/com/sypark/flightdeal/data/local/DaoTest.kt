@@ -139,4 +139,30 @@ class DaoTest {
 
         assertEquals(1, snapshots.observeFor(tokyo, sinceEpochSecond = 0).first().size)
     }
+
+    @Test
+    fun `이력을 지워도 추적 항목은 남는다`() = runTest {
+        val id = routes.insert(route())
+        snapshots.insert(snapshot(id, 300_000, at = 100))
+
+        snapshots.deleteAll()
+
+        // 외래키 방향이 반대(tracked_route -> price_snapshot)라 이력 삭제가
+        // 추적 항목까지 지우면 안 된다. 지우면 사용자의 추적 결정이 조용히 사라진다.
+        assertEquals(1, routes.observeAll().first().size)
+        assertEquals(0, snapshots.observeFor(id, sinceEpochSecond = 0).first().size)
+    }
+
+    @Test
+    fun `건수는 쌓을 때마다 늘어난다`() = runTest {
+        val id = routes.insert(route())
+
+        assertEquals(0, snapshots.observeCount().first())
+
+        snapshots.insert(snapshot(id, 300_000, at = 100))
+        assertEquals(1, snapshots.observeCount().first())
+
+        snapshots.insert(snapshot(id, 280_000, at = 200))
+        assertEquals(2, snapshots.observeCount().first())
+    }
 }

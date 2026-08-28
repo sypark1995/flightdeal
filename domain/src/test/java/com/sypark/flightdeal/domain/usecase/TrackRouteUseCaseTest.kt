@@ -95,6 +95,8 @@ class TrackRouteUseCaseTest {
         override fun observeHistory(trackedRouteId: Long, days: Int): Flow<List<PriceSnapshot>> =
             flowOf(appended)
         override suspend fun pruneOlderThan(days: Int) = Unit
+        override fun observeCount(): Flow<Int> = flowOf(appended.size)
+        override suspend fun clearAll() { appended.clear() }
     }
 
     @Test

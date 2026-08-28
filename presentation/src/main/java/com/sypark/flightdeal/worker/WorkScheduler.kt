@@ -13,8 +13,11 @@ object WorkScheduler {
     /**
      * WorkManager의 최소 주기는 15분이지만 항공권 가격은 분 단위로 바뀌지 않는다.
      * 짧게 잡으면 배터리와 API 쿼터만 쓰고 Doze에서 어차피 밀린다.
+     *
+     * internal로 열어 내정보 화면이 이 값을 그대로 읽는다. 화면에 "6"을 따로 적으면
+     * 나중에 주기를 바꿀 때 화면만 거짓말하게 된다.
      */
-    private const val INTERVAL_HOURS = 6L
+    internal const val INTERVAL_HOURS = 6L
     private const val WORK_NAME = "price-check"
 
     fun ensureScheduled(context: Context) {

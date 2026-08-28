@@ -33,6 +33,10 @@ class RoomPriceHistoryRepository(
 
     override suspend fun pruneOlderThan(days: Int) = dao.deleteOlderThan(cutoff(days))
 
+    override fun observeCount(): Flow<Int> = dao.observeCount()
+
+    override suspend fun clearAll() = dao.deleteAll()
+
     /**
      * 음수를 받으면 기준 시각이 미래가 되고, `capturedAt < 미래`는 모든 행에 참이라
      * 이력 전체가 지워진다. 조용히 0으로 보정하면 부르는 쪽의 계산 실수가 숨는다.

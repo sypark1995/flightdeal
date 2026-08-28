@@ -73,6 +73,8 @@ class CheckTrackedPricesUseCaseTest {
             appended.lastOrNull() ?: last
         override fun observeHistory(trackedRouteId: Long, days: Int) = flowOf(emptyList<PriceSnapshot>())
         override suspend fun pruneOlderThan(days: Int) { pruned = true }
+        override fun observeCount(): Flow<Int> = flowOf(appended.size)
+        override suspend fun clearAll() { appended.clear() }
     }
 
     private class StubPrices(
