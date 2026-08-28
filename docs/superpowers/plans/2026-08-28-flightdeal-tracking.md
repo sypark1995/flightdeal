@@ -1493,9 +1493,10 @@ git commit -m "feat: 노선 추적 등록·해제 UseCase 추가"
     }
 ```
 
-**기존 `viewModel(behavior)` 헬퍼도 고쳐야 한다.** `DealFeedViewModel`의 생성자가 인자를
-둘 받게 되므로, 헬퍼가 `TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory())`를
-함께 넘기도록 바꾼다. 기존 테스트의 단언은 하나도 바꾸지 않는다.
+**`DealFeedViewModel`을 생성하는 곳을 전부 고쳐야 한다.** 생성자가 인자를 둘 받게 되므로
+공용 `viewModel(behavior)` 헬퍼뿐 아니라 테스트 안에서 직접 생성하는 자리들도
+`TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory())`를 함께 넘겨야 컴파일된다.
+기존 테스트의 단언은 하나도 바꾸지 않는다.
 
 - [ ] **Step 2: 테스트 실패 확인**
 
@@ -1566,7 +1567,7 @@ import를 추가한다.
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 43, `:data` 74, `:presentation` 15(14+1).
+기대: `:domain` 45, `:data` 80, `:presentation` 15(14+1).
 
 ```bash
 git add presentation
@@ -2024,7 +2025,7 @@ fun TrackingScreen(
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 43, `:data` 74, `:presentation` 19(15+4).
+기대: `:domain` 45, `:data` 80, `:presentation` 19(15+4).
 
 ```bash
 git add presentation
@@ -2353,7 +2354,7 @@ class CheckTrackedPricesUseCase @Inject constructor(
 ./gradlew :domain:test
 ```
 
-기대: `:domain` 51(43+8).
+기대: `:domain` 53(45+8).
 
 **`가격이 내리면 변동을 돌려준다`가 실패하면** `currentPrice`의 날짜 필터를 확인한다.
 테스트의 `quote(280_000)`은 `departDate`가 추적 항목과 같으므로 통과해야 한다.
@@ -2643,7 +2644,7 @@ class FlightDealApp : Application(), Configuration.Provider {
 ./gradlew :domain:test :data:testDebugUnitTest :presentation:testDebugUnitTest :presentation:assembleDebug
 ```
 
-기대: `:domain` 51, `:data` 74, `:presentation` 19. BUILD SUCCESSFUL.
+기대: `:domain` 53, `:data` 80, `:presentation` 19. BUILD SUCCESSFUL.
 
 - [ ] **Step 11: 에뮬레이터에서 확인**
 
