@@ -3002,6 +3002,218 @@ git commit -m "feat: 6시간 주기 가격 확인 워커와 변동 알림 추가
 
 ---
 
+## Task 7b: 기준가와 폴링을 같은 규칙으로 (전체 리뷰에서 발견한 Critical)
+
+**Files:**
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/repository/FlightPriceRepository.kt`
+- Modify: `domain/src/main/java/com/sypark/flightdeal/domain/usecase/CheckTrackedPricesUseCase.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/remote/TravelpayoutsFlightPriceRepository.kt`
+- Modify: `data/src/main/java/com/sypark/flightdeal/data/fake/FakeFlightPriceRepository.kt`
+- Modify: 인터페이스를 구현하는 모든 테스트 더블
+- Test: `data/.../remote/TravelpayoutsFlightPriceRepositoryTest.kt`, `domain/.../usecase/CheckTrackedPricesUseCaseTest.kt`
+
+### 무엇이 잘못됐나
+
+**등록 시 기준가와 워커의 폴링 값이 서로 다른 규칙으로 뽑힌다.**
+
+기준가는 딜 피드가 보여준 시세다. 그 시세는 `cheapestDeals`가
+`GatePolicy.prioritize(..., minCount = 1).firstOrNull()`로 고른 것 — **한국에서 예약 가능한
+예약처의 가격**이며 일부러 전체 최저가가 아니다.
+
+워커는 전혀 다른 규칙을 쓴다.
+
+```kotlin
+result.data.filter { it.departDate == tracked.departDate }.minByOrNull { it.price.amount }?.price
+```
+
+예약처를 가리지 않는 무조건 최저가다. 두 규칙이 같은 값을 내는 건 우연뿐이고, 어긋나면
+**워커 값이 체계적으로 더 싸다.** 그래서 등록 후 첫 실행에서 있지도 않은 하락이 잡힌다.
+사용자는 알림을 받고 예약처에 들어가는데 가격이 그대로다.
+
+픽스처 `v3-ICN-TYO-roundtrip.json`의 2026-10-06에는 `301,430 / Farera`와
+`324,513 / City.Travel`이 함께 있다. 피드가 Trip.com 행을 골라 기준가로 저장하면,
+여섯 시간 뒤 워커는 같은 달에서 301,430(러시아 시장 예약처)을 집어 9% 하락을 만들어낸다.
+
+**둘째, 귀국일을 맞추지 않는다.** 필터가 `departDate`만 본다. 같은 픽스처의 2026-10-13에는
+귀국일 10/16과 10/20이 섞여 있다. 10/13–10/16을 추적하는데 10/20 귀국편 가격이 잡히고,
+그 행이 캐시에서 밀려나면 또 다른 조합이 최저가가 되어 **가격 변동이 없어도 여섯 시간마다
+알림이 온다.**
+
+**태스크별 리뷰로는 볼 수 없었다.** 두 규칙이 다른 클래스에 살고, 모든 테스트 가짜가
+둘을 일치시켜 놓았다. 선택 규칙을 한 곳에 이름 붙이기 전에는 이걸 잡는 테스트를 쓸 수 없다.
+
+### 고침
+
+**"이 여정의 현재 추적 가격"을 답하는 함수를 하나 두고, 등록과 폴링이 그것만 쓴다.**
+
+`FlightPriceRepository`에 추가한다.
+
+```kotlin
+    /**
+     * 추적 중인 여정 하나의 현재 가격.
+     *
+     * 등록 시점의 기준가와 이후 폴링은 **반드시 같은 규칙**으로 골라야 한다.
+     * 다르게 고르면 첫 비교에서 있지도 않은 변동이 잡히고, 사용자는 알림을 받고
+     * 예약처에 들어가서 가격이 그대로인 것을 본다.
+     *
+     * 출발일과 귀국일을 모두 맞춘다. 출발일만 맞추면 귀국일이 다른 조합이 잡혀
+     * 가격이 그대로여도 매 실행마다 변동으로 읽힌다.
+     */
+    suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won>
+```
+
+`TravelpayoutsFlightPriceRepository`에서 **딜 피드와 같은 예약처 규칙**을 적용한다.
+
+```kotlin
+    override suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won> = callSingle {
+        val quotes = fetch(
+            originIata = route.origin.iata,
+            destinationIata = route.destination.iata,
+            month = YearMonth.from(departDate),
+            tripType = tripType,
+        ).filter { it.quote.departDate == departDate && it.quote.returnDate == returnDate }
+
+        // 딜 피드가 고른 것과 같은 규칙이다. 여기서 규칙이 갈리면 가짜 변동이 생긴다.
+        GatePolicy.prioritize(quotes, { it.gate }, minCount = 1).firstOrNull()?.quote?.price
+    }
+```
+
+`call`이 리스트를 다루므로 단일 값용 헬퍼를 하나 더 둔다. 예외 매핑은 그대로 재사용한다.
+
+```kotlin
+    private suspend fun <T : Any> callSingle(block: suspend () -> T?): AppResult<T> =
+        when (val result = call { listOfNotNull(block()) }) {
+            is AppResult.Success -> AppResult.Success(result.data.first())
+            AppResult.Empty -> AppResult.Empty
+            is AppResult.NetworkError -> result
+            is AppResult.Unknown -> result
+        }
+```
+
+`CheckTrackedPricesUseCase.currentPrice`를 통째로 바꾼다.
+
+```kotlin
+    /** 한 노선이 실패했다고 나머지를 포기하지 않는다. */
+    private suspend fun currentPrice(tracked: TrackedRoute): Won? =
+        when (
+            val result = prices.trackedPrice(
+                route = tracked.route,
+                departDate = tracked.departDate,
+                returnDate = tracked.returnDate,
+                tripType = tracked.tripType,
+            )
+        ) {
+            is AppResult.Success -> result.data
+            else -> null
+        }
+```
+
+`Won` import를 추가하고, 더 이상 쓰지 않으면 `YearMonth` import를 정리한다.
+
+`FakeFlightPriceRepository`에도 구현을 더한다. 픽스처의 같은 여정을 골라 돌려준다.
+
+```kotlin
+    override suspend fun trackedPrice(
+        route: Route,
+        departDate: LocalDate,
+        returnDate: LocalDate?,
+        tripType: TripType,
+    ): AppResult<Won> = respond {
+        FakeDealFixtures.monthlyPrices(route, YearMonth.from(departDate))
+            .firstOrNull { it.departDate == departDate }
+            ?.let { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+            ?.price
+    }
+
+```
+
+### 테스트
+
+`TravelpayoutsFlightPriceRepositoryTest.kt`에 추가한다. 픽스처에 러시아 예약처가 더 싸게
+들어있는 날짜가 있으므로, 그날을 골라 **더 싼 쪽이 아니라 예약 가능한 쪽**이 나오는지 본다.
+
+```kotlin
+    @Test
+    fun `추적 가격도 한국에서 예약 가능한 예약처를 우선한다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T09:20:00+09:00",
+                   "return_at":"2026-10-12T10:40:00+09:00","price":301430,"airline":"KE",
+                   "gate":"Farera","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "return_at":"2026-10-12T10:40:00+09:00","price":330000,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = repository.trackedPrice(
+            route = route,
+            departDate = LocalDate.of(2026, 10, 6),
+            returnDate = LocalDate.of(2026, 10, 12),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 더 싼 301,430은 한국에서 결제가 안 되는 예약처다. 딜 피드가 고른 것과 같아야 한다 —
+        // 다르면 등록 직후 첫 실행에서 있지도 않은 하락이 잡힌다.
+        assertEquals(Won(330_000), (result as AppResult.Success).data)
+    }
+
+    @Test
+    fun `귀국일이 다르면 같은 여정으로 치지 않는다`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-13T09:20:00+09:00",
+                   "return_at":"2026-10-20T10:40:00+09:00","price":320806,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-13T15:15:00+09:00",
+                   "return_at":"2026-10-16T10:40:00+09:00","price":326181,"airline":"KE",
+                   "gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = repository.trackedPrice(
+            route = route,
+            departDate = LocalDate.of(2026, 10, 13),
+            returnDate = LocalDate.of(2026, 10, 16),
+            tripType = TripType.ROUND_TRIP,
+        )
+
+        // 출발일만 맞추면 10/20 귀국편이 잡혀 매번 가짜 변동이 뜬다.
+        assertEquals(Won(326_181), (result as AppResult.Success).data)
+    }
+```
+
+`CheckTrackedPricesUseCaseTest.kt`의 `StubPrices`를 `trackedPrice`를 답하도록 바꾸고,
+전달된 인자를 기록해 아래를 확인한다.
+
+```kotlin
+    @Test
+    fun `추적 항목의 여정을 그대로 조회한다`() = runTest {
+        val prices = StubPrices(AppResult.Success(Won(280_000)))
+
+        useCase(StubRoutes(listOf(tracked())), StubHistory(snapshot(300_000)), prices).invoke()
+
+        // 등록 때와 같은 여정을 물어야 같은 규칙으로 고른 값이 온다.
+        assertEquals(LocalDate.of(2026, 10, 12), prices.seenDepartDate)
+        assertEquals(LocalDate.of(2026, 10, 16), prices.seenReturnDate)
+        assertEquals(TripType.ROUND_TRIP, prices.seenTripType)
+    }
+```
+
 ## 완료 기준
 
 - [ ] 딜 카드에서 노선을 추적 등록할 수 있고, 등록 즉시 첫 스냅샷이 남는다
