@@ -69,9 +69,13 @@ class FakeFlightPriceRepository(
         returnDate: LocalDate?,
         tripType: TripType,
     ): AppResult<Won> = respond {
+        // returnDate까지 맞춰야 한다. 실제 구현이 고치기 전 버그가 출발일만 보고
+        // 귀국일이 다른 여정을 같은 것으로 취급했다 — 그 버그를 이 fake가 다시
+        // 감추면 여기 기대는 테스트가 회귀를 못 잡는다.
         FakeDealFixtures.monthlyPrices(route, YearMonth.from(departDate))
             .firstOrNull { it.departDate == departDate }
             ?.let { if (tripType == TripType.ONE_WAY) it.asOneWay() else it }
+            ?.takeIf { it.returnDate == returnDate }
             ?.price
     }
 

@@ -10,5 +10,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE tracked_route ADD COLUMN notifiedPrice INTEGER")
+        // 기준선을 비워두면 그 행은 영영 알림을 못 준다 — 비교 대상이 없어 변동이
+        // 판정되지 않고, 판정이 없으니 기준선을 채울 기회도 오지 않는다.
+        // 이미 모아둔 마지막 관측값으로 채운다.
+        db.execSQL(
+            "UPDATE tracked_route SET notifiedPrice = (" +
+                "SELECT price FROM price_snapshot WHERE trackedRouteId = tracked_route.id " +
+                "ORDER BY capturedAt DESC, id DESC LIMIT 1)"
+        )
     }
 }

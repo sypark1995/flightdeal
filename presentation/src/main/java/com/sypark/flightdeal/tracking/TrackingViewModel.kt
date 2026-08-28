@@ -49,15 +49,21 @@ class TrackingViewModel @Inject constructor(
     }
 
     /**
-     * 마지막 두 관측값을 붙인다. 하나뿐이면 [TrackedItem.previous]가 null이고
-     * 화면은 변동을 표시하지 않는다 — 등록 직후엔 비교할 대상이 없다.
+     * [TrackedItem.previous]는 최신값 바로 앞 관측이 아니라, 최신값과 가격이 다른
+     * 가장 최근 관측이다.
+     *
+     * 스냅샷은 값이 그대로여도 폴링마다 쌓인다. 단순히 "마지막 두 개"를 비교하면
+     * 변동 없는 주기가 한 번만 껴도 최근 두 값이 같아져 ▼가 사라진다 — 알림으로
+     * 방금 통보한 하락까지 화면에서 지워진다. 저장된 값이 전부 같으면 previous는
+     * null이고 화살표는 정당하게 사라진다.
      */
     private fun TrackedRoute.itemFlow(): Flow<TrackedItem> =
         history.observeHistory(id, HISTORY_DAYS).map { recent ->
+            val latest = recent.lastOrNull()
             TrackedItem(
                 tracked = this,
-                latest = recent.lastOrNull(),
-                previous = recent.getOrNull(recent.lastIndex - 1),
+                latest = latest,
+                previous = recent.dropLast(1).lastOrNull { it.price != latest?.price },
             )
         }
 

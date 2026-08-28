@@ -118,6 +118,29 @@ class TrackingViewModelTest {
     }
 
     @Test
+    fun `값이 그대로인 폴링이 쌓여도 마지막 변동을 계속 보여준다`() = runTest {
+        // 300,000 -> 250,000 하락 이후 세 번의 무변동 폴링. 마지막 두 스냅샷만 보면
+        // 둘 다 250,000이라 화살표가 사라진다.
+        val history = FakeHistory(
+            listOf(
+                snapshot(300_000, 100),
+                snapshot(250_000, 200),
+                snapshot(250_000, 300),
+                snapshot(250_000, 400),
+            )
+        )
+
+        viewModel(FakeRoutes(listOf(tracked())), history).uiState.test {
+            awaitItem()
+            val item = (awaitItem() as TrackingUiState.Success).items.single()
+
+            assertEquals(Won(250_000), item.latest!!.price)
+            // 방금 통보한 하락(300,000 -> 250,000)이 계속 보여야 한다.
+            assertEquals(Won(300_000), item.previous!!.price)
+        }
+    }
+
+    @Test
     fun `새 가격이 저장되면 화면이 바로 갱신된다`() = runTest {
         val snapshots = MutableStateFlow(listOf(snapshot(300_000, 100)))
         val history = object : PriceHistoryRepository {

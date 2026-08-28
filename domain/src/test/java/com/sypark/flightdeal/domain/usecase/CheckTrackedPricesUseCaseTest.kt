@@ -247,6 +247,25 @@ class CheckTrackedPricesUseCaseTest {
     }
 
     @Test
+    fun `기준선이 없으면 채우고 알리지 않는다`() = runTest {
+        // 마이그레이션 백필을 놓쳤거나 add()가 notifiedPrice 없이 불린 경우를 흉내낸다.
+        val routes = StubRoutes(listOf(tracked(notifiedPrice = null)))
+        val history = StubHistory(null)
+
+        val first = useCase(routes, history, StubPrices(AppResult.Success(Won(250_000)))).invoke()
+
+        // 처음 관측한 값을 기준선으로 삼을 뿐, 그 자체를 변동으로 알리지는 않는다.
+        assertTrue(first.isEmpty())
+        assertEquals(Won(250_000), routes.getAll().single().notifiedPrice)
+
+        // 기준선이 채워졌으니 다음 폴링부터는 정상적으로 변동을 잡아야 한다.
+        val second = useCase(routes, history, StubPrices(AppResult.Success(Won(200_000)))).invoke()
+
+        assertEquals(1, second.size)
+        assertEquals(Direction.DOWN, second.single().direction)
+    }
+
+    @Test
     fun `관측 이력은 통보와 무관하게 쌓인다`() = runTest {
         val routes = StubRoutes(listOf(tracked(notifiedPrice = Won(300_000))))
         val history = StubHistory(snapshot(300_000))

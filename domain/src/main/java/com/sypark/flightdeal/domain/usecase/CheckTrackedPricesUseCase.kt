@@ -42,6 +42,13 @@ class CheckTrackedPricesUseCase @Inject constructor(
             )
         )
 
+        // 기준선이 없으면 지금 값을 기준선으로 삼고 이번엔 알리지 않는다.
+        // 비워둔 채로 두면 이 행은 어떤 변동도 영영 판정하지 못한다.
+        if (tracked.notifiedPrice == null) {
+            trackedRoutes.markNotified(tracked.id, current)
+            return null
+        }
+
         // 비교는 마지막으로 통보한 값과 한다. 마지막으로 관측한 값과 비교하면
         // 알림이 실패했을 때 그 변동이 기준선에 흡수돼 영영 사라진다.
         return detectChanges(tracked, tracked.notifiedPrice, current)

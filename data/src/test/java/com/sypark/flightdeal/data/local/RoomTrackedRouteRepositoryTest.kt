@@ -55,6 +55,7 @@ class RoomTrackedRouteRepositoryTest {
         returnDate = LocalDate.of(2026, 10, 16),
         tripType = tripType,
         targetPrice = Won(280_000),
+        notifiedPrice = null,
     )
 
     @Test
@@ -92,7 +93,7 @@ class RoomTrackedRouteRepositoryTest {
 
     @Test
     fun `목표가를 안 정해도 등록된다`() = runTest {
-        tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, targetPrice = null)
+        tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, targetPrice = null, notifiedPrice = null)
 
         val saved = tracked.observeAll().first().single()
         assertNull(saved.targetPrice)
@@ -208,8 +209,8 @@ class RoomTrackedRouteRepositoryTest {
 
     @Test
     fun `귀국일이 없는 편도끼리도 중복으로 잡힌다`() = runTest {
-        val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
-        val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+        val first = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null, null)
+        val second = tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null, null)
 
         // SQLite의 유니크 인덱스는 NULL을 서로 다른 값으로 본다.
         // 편도의 귀국일을 NULL로 저장하면 중복이 그대로 쌓인다.
@@ -219,7 +220,7 @@ class RoomTrackedRouteRepositoryTest {
 
     @Test
     fun `편도로 등록하면 귀국일이 null로 돌아온다`() = runTest {
-        tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null)
+        tracked.add(route, LocalDate.of(2026, 10, 12), null, TripType.ONE_WAY, null, null)
 
         // 저장은 빈 문자열이지만 도메인은 null이어야 한다. 빈 문자열이 새어 나가면
         // 화면이 "편도"인데 귀국일 자리에 빈칸이 생긴다.

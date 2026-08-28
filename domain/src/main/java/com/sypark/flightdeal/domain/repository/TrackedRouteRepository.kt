@@ -14,14 +14,19 @@ interface TrackedRouteRepository {
     /** 워커용. 한 번만 읽는다. */
     suspend fun getAll(): List<TrackedRoute>
 
-    /** @return 새로 만들어진 추적 항목의 id */
+    /**
+     * @return 새로 만들어진 추적 항목의 id
+     *
+     * `notifiedPrice`에 기본값을 두지 않는다. 잊고 호출하면 통보 기준선이 NULL인
+     * 채로 저장되고, 그 행은 어떤 가격 변동도 영영 판정하지 못하는 죽은 행이 된다.
+     */
     suspend fun add(
         route: Route,
         departDate: LocalDate,
         returnDate: LocalDate?,
         tripType: TripType,
         targetPrice: Won?,
-        notifiedPrice: Won? = null,
+        notifiedPrice: Won?,
     ): Long
 
     suspend fun remove(id: Long)
