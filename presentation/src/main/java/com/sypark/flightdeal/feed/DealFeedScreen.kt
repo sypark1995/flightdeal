@@ -68,7 +68,10 @@ fun DealFeedScreen(
             ) {
                 items(
                     items = current.deals,
-                    key = { "${it.quote.route.destination.iata}/${it.quote.departDate}" },
+                    key = {
+                        "${it.quote.route.destination.iata}/${it.quote.departDate}" +
+                            "/${it.quote.airline}/${it.quote.price.amount}"
+                    },
                 ) { deal ->
                     DealCard(item = deal, onClick = { /* 딥링크는 이후 계획서에서 */ })
                 }
