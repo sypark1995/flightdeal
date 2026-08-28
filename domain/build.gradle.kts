@@ -8,7 +8,7 @@ kotlin {
 
 dependencies {
     api(libs.kotlinx.coroutines.core)
-    implementation("javax.inject:javax.inject:1")
+    implementation(libs.javax.inject)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
