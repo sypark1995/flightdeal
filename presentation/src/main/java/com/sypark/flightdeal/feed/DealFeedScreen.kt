@@ -58,6 +58,13 @@ fun DealFeedScreen(
                 .padding(horizontal = 14.dp, vertical = 13.dp),
         )
 
+        Text(
+            text = "표시 가격은 참고가예요. 정확한 금액은 예약처에서 확인해주세요.",
+            color = TextSecondary,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+
         when (val current = state) {
             DealFeedUiState.Loading -> DealSkeleton()
 
