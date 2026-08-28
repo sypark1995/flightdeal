@@ -459,4 +459,113 @@ class DealFeedViewModelTest {
             expectNoEvents()
         }
     }
+
+    /**
+     * 호출마다 원하는 결과로 바꿔가며 검증할 때 쓰는 스텁. 두 번째 조회부터
+     * 첫 조회와 다른 결과(성공→실패 등)를 돌려줘야 하는 테스트 전용이다.
+     *
+     * 지연 없이 즉시 값을 돌려주면 Loading이 StateFlow의 conflation으로
+     * 관찰되기 전에 다음 값에 덮여, 구현이 Loading을 실제로 건너뛰었는지와
+     * 무관하게 테스트가 항상 통과해버린다. SlowFirstRepository와 같은 이유로
+     * delay를 둔다.
+     */
+    private inner class SwitchableRepository(
+        var nextResult: AppResult<List<PriceQuote>> = AppResult.Success(listOf(quote(189_000))),
+    ) : FlightPriceRepository {
+
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> {
+            delay(10L)
+            return nextResult
+        }
+
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
+            AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
+    }
+
+    @Test
+    fun `새로고침이 실패해도 보던 목록을 지우지 않는다`() = runTest {
+        // 첫 조회는 성공해서 목록이 떠 있다.
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+
+        // 두 번째 조회가 네트워크 오류로 실패한다.
+        repository.nextResult = AppResult.NetworkError(IOException())
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        // 목록은 그대로 남아야 한다. 오류는 스낵바로만 알린다.
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+    }
+
+    @Test
+    fun `첫 조회가 실패하면 오류 화면을 보여준다`() = runTest {
+        // 보여줄 것이 없으면 오류 화면이 맞다. 빈 화면보다 낫다.
+        val repository = SwitchableRepository(nextResult = AppResult.NetworkError(IOException()))
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Error)
+    }
+
+    @Test
+    fun `목록이 떠 있으면 새로고침 중에 Loading으로 되돌리지 않는다`() = runTest {
+        // Loading으로 바꾸면 스켈레톤이 떴다가 목록이 돌아온다 — 깜빡인다.
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+
+        viewModel.uiState.test {
+            assertEquals(DealFeedUiState.Loading, awaitItem())
+            assertTrue(awaitItem() is DealFeedUiState.Success)
+
+            repository.nextResult = AppResult.Success(listOf(quote(200_000)))
+            viewModel.refresh()
+
+            // 다음으로 받는 값이 Loading이면 깜빡임이 있다는 뜻이다.
+            assertTrue(awaitItem() is DealFeedUiState.Success)
+        }
+    }
+
+    @Test
+    fun `실패를 스낵바로 알린다`() = runTest {
+        // 목록을 남겨두기만 하고 아무 말도 안 하면 사용자는 갱신된 줄 안다.
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+
+        viewModel.messages.test {
+            repository.nextResult = AppResult.NetworkError(IOException())
+            viewModel.refresh()
+
+            assertEquals("가격을 새로 받아오지 못했어요", awaitItem())
+        }
+    }
 }
