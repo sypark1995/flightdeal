@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- updatePeriodMillis="0" — 시스템 주기 갱신에 맡기지 않는다. 시스템 최소 주기는
+     30분이라 6시간 폴링 주기와 어긋나 배터리만 쓴다. 워커가 값을 새로 쓸 때
+     PriceWidget.updateAll()로 우리가 직접 갱신한다. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout" />
