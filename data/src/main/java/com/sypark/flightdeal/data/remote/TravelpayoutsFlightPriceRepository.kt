@@ -2,6 +2,7 @@ package com.sypark.flightdeal.data.remote
 
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Airport
+import com.sypark.flightdeal.domain.model.DEFAULT_LEAD_MONTHS
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
@@ -50,7 +51,7 @@ class TravelpayoutsFlightPriceRepository(
         limit: Int,
         tripType: TripType,
     ): AppResult<List<PriceQuote>> = call {
-        val month = YearMonth.now(clock).plusMonths(LEAD_MONTHS)
+        val month = YearMonth.now(clock).plusMonths(DEFAULT_LEAD_MONTHS)
 
         coroutineScope {
             val outcomes = destinations.map { destination ->
@@ -219,9 +220,6 @@ class TravelpayoutsFlightPriceRepository(
 
     companion object {
         private val MONTH_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM")
-
-        /** 지금 사면 비싸다. 두 달 뒤가 특가가 나오는 구간이다. */
-        private const val LEAD_MONTHS = 2L
 
         /**
          * 피드 한 번에 cheapestDeals와 priceStats가 같은 요청을 연달아 보낸다.

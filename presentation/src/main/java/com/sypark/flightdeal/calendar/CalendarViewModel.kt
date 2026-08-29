@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.DEFAULT_LEAD_MONTHS
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.usecase.GetMonthCalendarUseCase
@@ -41,7 +42,11 @@ class CalendarViewModel @Inject constructor(
     private val _destination = MutableStateFlow(Airport.DESTINATIONS.first())
     val destination: StateFlow<Airport> = _destination.asStateFlow()
 
-    private val _month = MutableStateFlow(YearMonth.now(clock))
+    // 딜 피드가 두 달 뒤(DEFAULT_LEAD_MONTHS)를 본다. 이번 달로 열면 월말에는
+    // 남은 날이 며칠 안 돼 격자가 거의 비어 "가격 정보가 없는 앱"으로 읽힌다.
+    // 딜 피드와 같은 달에서 시작해야 처음 연 화면도 차 있고, 같은 노선을 두 화면에서
+    // 대조할 때도 값이 어긋나지 않는다.
+    private val _month = MutableStateFlow(YearMonth.now(clock).plusMonths(DEFAULT_LEAD_MONTHS))
     val month: StateFlow<YearMonth> = _month.asStateFlow()
 
     /**

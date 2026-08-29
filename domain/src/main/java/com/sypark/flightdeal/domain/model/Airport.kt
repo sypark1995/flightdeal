@@ -42,3 +42,12 @@ data class Route(
     val origin: Airport,
     val destination: Airport,
 )
+
+/**
+ * 지금으로부터 몇 달 뒤를 기본으로 보여줄지.
+ *
+ * 데이터 소스가 실사용자 검색 기록 캐시라 가까운 날짜는 듬성듬성하고 두 달쯤 뒤가
+ * 가장 촘촘하다. 딜 피드의 조회와 캘린더의 첫 화면이 **같은 값을 봐야 한다** —
+ * 다르면 같은 노선인데 두 화면의 가격이 안 맞고, 사용자는 어느 쪽이 맞는지 알 수 없다.
+ */
+const val DEFAULT_LEAD_MONTHS = 2L
