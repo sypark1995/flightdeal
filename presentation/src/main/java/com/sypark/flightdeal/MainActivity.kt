@@ -9,6 +9,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.sypark.flightdeal.ui.FlightDealNavHost
+import com.sypark.flightdeal.ui.Tab
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private val openTracking = MutableStateFlow(false)
+    private val openRoute = MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,13 +35,13 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = systemBarStyle,
             navigationBarStyle = systemBarStyle,
         )
-        openTracking.value = intent?.getBooleanExtra(EXTRA_OPEN_TRACKING, false) == true
+        openRoute.value = intent?.getStringExtra(EXTRA_OPEN_ROUTE)
         // 인텐트가 그대로 남아 있으면 회전할 때마다 다시 읽힌다 — 특가로 옮겨간 뒤
-        // 회전만 해도 추적 탭으로 되돌아가 버린다.
-        intent?.removeExtra(EXTRA_OPEN_TRACKING)
+        // 회전만 해도 목적지 탭으로 되돌아가 버린다.
+        intent?.removeExtra(EXTRA_OPEN_ROUTE)
         setContent {
             FlightDealTheme {
-                FlightDealNavHost(openTracking = openTracking)
+                FlightDealNavHost(openRoute = openRoute)
             }
         }
     }
@@ -48,13 +49,21 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_OPEN_TRACKING, false)) openTracking.value = true
+        intent.getStringExtra(EXTRA_OPEN_ROUTE)?.let { openRoute.value = it }
         // 인텐트가 그대로 남아 있으면 회전할 때마다 다시 읽힌다 — 특가로 옮겨간 뒤
-        // 회전만 해도 추적 탭으로 되돌아가 버린다.
-        intent.removeExtra(EXTRA_OPEN_TRACKING)
+        // 회전만 해도 목적지 탭으로 되돌아가 버린다.
+        intent.removeExtra(EXTRA_OPEN_ROUTE)
     }
 
     companion object {
-        const val EXTRA_OPEN_TRACKING = "open_tracking"
+        /**
+         * 목적지 탭을 가리키는 문자열 하나. 값은 [Tab.route]를 그대로 쓴다 — 위젯, 알림,
+         * 홈 화면 바로가기가 모두 이 extra로 같은 경로에 도착한다.
+         */
+        const val EXTRA_OPEN_ROUTE = "open_route"
+
+        /** 정적 바로가기([res/xml/shortcuts.xml])가 문자열 리터럴로도 이 값을 쓴다. */
+        val ROUTE_TRACKING = Tab.Tracking.route
+        val ROUTE_SEARCH = Tab.Search.route
     }
 }

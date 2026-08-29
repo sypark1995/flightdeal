@@ -26,7 +26,12 @@ import com.sypark.flightdeal.tracking.TrackingScreen
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 
-private enum class Tab(val route: String, val label: String) {
+/**
+ * `route` 값은 알림([com.sypark.flightdeal.worker.PriceChangeNotifier])과 홈 화면
+ * 바로가기([com.sypark.flightdeal.MainActivity.EXTRA_OPEN_ROUTE])가 목적지를 가리킬 때도
+ * 그대로 쓴다 — 문자열을 따로 정의하면 여기서 라우트 이름이 바뀔 때 그쪽이 조용히 깨진다.
+ */
+enum class Tab(val route: String, val label: String) {
     Deals("deals", "특가"),
     Tracking("tracking", "추적"),
     // "검색"이던 라벨을 "달력"으로 바꾼다. 이 화면은 자유 검색이 아니라 날짜별
@@ -39,21 +44,24 @@ private enum class Tab(val route: String, val label: String) {
 private const val ALERT_HISTORY_ROUTE = "alerts"
 
 @Composable
-fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow(false)) {
+fun FlightDealNavHost(openRoute: MutableStateFlow<String?> = MutableStateFlow(null)) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    val shouldOpenTracking by openTracking.collectAsStateWithLifecycle()
-    LaunchedEffect(shouldOpenTracking) {
-        if (shouldOpenTracking) {
-            navController.navigate(Tab.Tracking.route) {
+    // 알림과 홈 화면 바로가기가 공유하는 목적지 하나. 탭이 둘 이상이 되면서
+    // 불리언 하나로는 "어디로"를 표현할 수 없어졌다 — 문자열 라우트로 일반화한다.
+    val targetRoute by openRoute.collectAsStateWithLifecycle()
+    LaunchedEffect(targetRoute) {
+        val route = targetRoute
+        if (route != null) {
+            navController.navigate(route) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 launchSingleTop = true
                 restoreState = true
             }
             // 한 번만 이동한다. 소비하지 않으면 회전할 때마다 탭이 되돌아간다.
-            openTracking.value = false
+            openRoute.value = null
         }
     }
 

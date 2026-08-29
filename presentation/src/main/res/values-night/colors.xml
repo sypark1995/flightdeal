@@ -2,4 +2,12 @@
 <resources>
     <!-- Color.kt의 DarkPalette.background와 반드시 같은 값이어야 한다. -->
     <color name="window_background">#FF101114</color>
+
+    <!-- Color.kt의 DarkPalette와 값이 같아야 한다. -->
+    <color name="widget_surface">#FF1A1C21</color>
+    <color name="widget_outline">#FF2A2D34</color>
+    <color name="widget_text_primary">#FFF2F3F5</color>
+    <color name="widget_text_secondary">#FF9199AB</color>
+    <color name="widget_price_down">#FF3DD9A0</color>
+    <color name="widget_price_up">#FFFF7B7B</color>
 </resources>

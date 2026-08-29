@@ -68,6 +68,8 @@ dependencies {
 
     implementation(libs.androidx.browser)
 
+    implementation(libs.glance.appwidget)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)

@@ -9,6 +9,8 @@ import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import com.sypark.flightdeal.domain.usecase.SetTargetPriceUseCase
 import com.sypark.flightdeal.domain.usecase.UntrackRouteUseCase
+import com.sypark.flightdeal.widget.NoopWidgetUpdater
+import com.sypark.flightdeal.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +33,9 @@ class TrackingViewModel @Inject constructor(
     private val untrackRoute: UntrackRouteUseCase,
     private val setTargetPrice: SetTargetPriceUseCase,
     private val clock: Clock,
+    // 기본값은 테스트용이다. Hilt는 실제 구현을 명시적으로 주입하므로 앱에서는 항상
+    // GlancePriceWidgetUpdater가 들어간다.
+    private val widgetUpdater: WidgetUpdater = NoopWidgetUpdater,
 ) : ViewModel() {
 
     /**
@@ -52,29 +57,26 @@ class TrackingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrackingUiState.Loading)
 
     fun untrack(id: Long) {
-        viewModelScope.launch { untrackRoute(id) }
+        viewModelScope.launch {
+            untrackRoute(id)
+            // 해제한 노선이 위젯에 떠 있었을 수 있다. 갱신하지 않으면 이미 지운
+            // 추적이 위젯에는 계속 남아 있는 것처럼 보인다.
+            widgetUpdater.refresh()
+        }
     }
 
     fun setTarget(id: Long, target: Won?) {
         viewModelScope.launch { setTargetPrice(id, target) }
     }
 
-    /**
-     * [TrackedItem.previous]는 최신값 바로 앞 관측이 아니라, 최신값과 가격이 다른
-     * 가장 최근 관측이다.
-     *
-     * 스냅샷은 값이 그대로여도 폴링마다 쌓인다. 단순히 "마지막 두 개"를 비교하면
-     * 변동 없는 주기가 한 번만 껴도 최근 두 값이 같아져 ▼가 사라진다 — 알림으로
-     * 방금 통보한 하락까지 화면에서 지워진다. 저장된 값이 전부 같으면 previous는
-     * null이고 화살표는 정당하게 사라진다.
-     */
+    /** [TrackedItem.previous]를 어떻게 고르는지는 [previousDifferingSnapshot]에 적어뒀다. */
     private fun TrackedRoute.itemFlow(): Flow<TrackedItem> =
         history.observeHistory(id, PRICE_HISTORY_RETENTION_DAYS).map { recent ->
             val latest = recent.lastOrNull()
             TrackedItem(
                 tracked = this,
                 latest = latest,
-                previous = recent.dropLast(1).lastOrNull { it.price != latest?.price },
+                previous = previousDifferingSnapshot(recent, latest),
                 // 그래프는 마지막 두 점이 아니라 이미 가져온 전체 이력을 그대로 쓴다.
                 // 조회를 새로 추가하면 같은 데이터를 두 번 읽게 된다.
                 history = recent,

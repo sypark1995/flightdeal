@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 정적 바로가기 둘. 아이콘은 이 프로젝트에 드로어블이 하나도 없어서(런처 아이콘도
+     기본값을 쓴다) 안드로이드 기본 리소스를 그대로 쓴다.
+
+     extra 값 "tracking"/"search"는 문자열 리터럴이라 FlightDealNavHost의 Tab.route와
+     자동으로 맞물리지 않는다 — Tab의 route를 바꾸면 여기도 같이 고쳐야 한다. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="tracking"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_recent_history"
+        android:shortcutShortLabel="@string/shortcut_tracking_short"
+        android:shortcutLongLabel="@string/shortcut_tracking_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.sypark.flightdeal"
+            android:targetClass="com.sypark.flightdeal.MainActivity">
+            <extra android:name="open_route" android:value="tracking" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="calendar"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_month"
+        android:shortcutShortLabel="@string/shortcut_calendar_short"
+        android:shortcutLongLabel="@string/shortcut_calendar_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.sypark.flightdeal"
+            android:targetClass="com.sypark.flightdeal.MainActivity">
+            <extra android:name="open_route" android:value="search" />
+        </intent>
+    </shortcut>
+</shortcuts>

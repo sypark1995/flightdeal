@@ -11,6 +11,8 @@ import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.repository.SettingsRepository
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import com.sypark.flightdeal.domain.usecase.TrackRouteUseCase
+import com.sypark.flightdeal.widget.NoopWidgetUpdater
+import com.sypark.flightdeal.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -29,6 +31,9 @@ class DealFeedViewModel @Inject constructor(
     private val getDealFeed: GetDealFeedUseCase,
     private val trackRoute: TrackRouteUseCase,
     private val settings: SettingsRepository,
+    // 기본값은 테스트용이다. Hilt는 실제 구현을 명시적으로 주입하므로 앱에서는 항상
+    // GlancePriceWidgetUpdater가 들어간다.
+    private val widgetUpdater: WidgetUpdater = NoopWidgetUpdater,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DealFeedUiState>(DealFeedUiState.Loading)
@@ -217,6 +222,8 @@ class DealFeedViewModel @Inject constructor(
             try {
                 val registration = trackRoute(item.quote, item.quote.impliedTripType())
                 _messages.tryEmit(if (registration.isNew) "추적을 시작했어요" else "이미 추적 중이에요")
+                // 이미 추적 중이던 노선이면 위젯에 보일 목록이 바뀌지 않는다.
+                if (registration.isNew) widgetUpdater.refresh()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

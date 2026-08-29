@@ -4,4 +4,14 @@
          콜드 스타트/시스템 다크-라이트 전환 때 윈도우 배경(그리고 API 31+ 스플래시)이
          Compose가 첫 프레임을 그리기 전까지 다른 색으로 잠깐 보인다. -->
     <color name="window_background">#FFFFFFFF</color>
+
+    <!-- 아래는 위젯(Glance) 전용이다. Glance는 Compose의 CompositionLocal 팔레트를
+         읽을 수 없어 색 리소스로 다시 옮겨 적는다. Color.kt의 LightPalette와
+         값이 어긋나면 위젯만 다른 앱처럼 보인다. -->
+    <color name="widget_surface">#FFF4F5F9</color>
+    <color name="widget_outline">#FFEAECF3</color>
+    <color name="widget_text_primary">#FF0F1115</color>
+    <color name="widget_text_secondary">#FF8A8FA3</color>
+    <color name="widget_price_down">#FF0E9E6E</color>
+    <color name="widget_price_up">#FFD93A3A</color>
 </resources>

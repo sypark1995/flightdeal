@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">flightdeal</string>
+    <string name="widget_description">추적 중인 항공권의 최신 가격을 홈 화면에서 바로 봅니다.</string>
+
+    <string name="shortcut_tracking_short">추적</string>
+    <string name="shortcut_tracking_long">추적 중인 항공권</string>
+    <string name="shortcut_calendar_short">달력</string>
+    <string name="shortcut_calendar_long">날짜별 최저가</string>
 </resources>

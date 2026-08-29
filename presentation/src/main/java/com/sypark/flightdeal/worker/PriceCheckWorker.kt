@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import com.sypark.flightdeal.domain.usecase.CheckTrackedPricesUseCase
 import com.sypark.flightdeal.domain.usecase.ConfirmNotifiedUseCase
+import com.sypark.flightdeal.widget.WidgetUpdater
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -20,6 +21,7 @@ class PriceCheckWorker @AssistedInject constructor(
     private val trackedRoutes: TrackedRouteRepository,
     private val notifier: PriceChangeNotifier,
     private val confirmNotified: ConfirmNotifiedUseCase,
+    private val widgetUpdater: WidgetUpdater,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = try {
@@ -28,6 +30,9 @@ class PriceCheckWorker @AssistedInject constructor(
         // 화면에 뜨지도 않은 변동이 통보된 것으로 처리돼 영영 사라진다.
         val shown = notifier.notify(changes, trackedRoutes.getAll())
         if (shown.isNotEmpty()) confirmNotified(shown)
+        // 알림이 떴는지와 무관하게 위젯을 다시 그린다. 값이 바뀌었으면 위젯은 새
+        // 값을 보여야 하고, 알림은 채널이 꺼져 있을 수도 있다 — 둘은 다른 사건이다.
+        widgetUpdater.refresh()
         Log.d(TAG, "가격 확인 완료, 변동 ${changes.size}건")
         Result.success()
     } catch (e: CancellationException) {
