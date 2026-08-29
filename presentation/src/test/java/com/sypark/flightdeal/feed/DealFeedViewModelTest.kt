@@ -384,14 +384,16 @@ class DealFeedViewModelTest {
         // 화면에 남아 있는 카드는 실제로 왕복 견적이어야 한다 — 이 테스트의 전제다.
         assertTrue(displayedDeal.quote.returnDate != null)
 
-        // 편도로 토글한다. 토글은 즉시 바뀌지만, 조회가 오래 걸려 화면에는
-        // 여전히 위에서 잡아둔 왕복 카드가 그대로 남아 있다.
+        // 편도로 토글한다. 조건이 바뀐 조회라 화면은 곧바로 Loading으로 넘어가지만
+        // (같은 조건일 때만 목록을 유지한다는 규칙), 추적 버튼의 클릭 콜백은 탭
+        // 시점에 잡아둔 [displayedDeal](왕복 견적) 객체를 그대로 들고 있다 —
+        // 화면이 그 사이 무엇을 보여주든 상관없다.
         viewModel.setTripType(TripType.ONE_WAY)
         advanceTimeBy(100)
         assertEquals(TripType.ONE_WAY, viewModel.tripType.value)
-        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Loading)
 
-        // 조회가 끝나기 전에, 아직 화면에 떠 있는 왕복 카드를 추적한다.
+        // 조회가 끝나기 전에, 탭 시점에 잡아둔 왕복 카드를 추적한다.
         viewModel.track(displayedDeal)
         advanceUntilIdle()
 
@@ -400,7 +402,7 @@ class DealFeedViewModelTest {
     }
 
     @Test
-    fun `연속으로 토글한 뒤 실패하면 화면의 데이터에 맞는 종류로 되돌린다`() = runTest {
+    fun `조건이 바뀐 조회가 실패하면 이전 목록을 남기지 않는다`() = runTest {
         val repository = SwitchableRepository()
         val viewModel = DealFeedViewModel(
             GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
@@ -411,16 +413,40 @@ class DealFeedViewModelTest {
         advanceUntilIdle()
         assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
 
-        // 편도로 눌렀다가, 그 요청이 끝나기 전에 다시 왕복으로 누른다. 이후 요청은
-        // 계속 실패한다 — 화면에 남은 목록은 처음의 왕복 그대로다.
+        // 편도로 바꾸는데 그 요청이 실패한다. 조건(여정 종류)이 바뀐 요청이므로
+        // 화면에 남아있던 왕복 목록은 이번 질문에 대한 답이 아니다.
         repository.nextResult = AppResult.NetworkError(IOException())
         viewModel.setTripType(TripType.ONE_WAY)
-        viewModel.setTripType(TripType.ROUND_TRIP)
         advanceUntilIdle()
 
-        // "마지막으로 탭한 값 이전"(편도)이 아니라, 화면에 실제로 남아 있는
-        // 데이터의 종류(왕복)로 되돌아가야 한다.
+        // 예전에는 "화면의 데이터에 맞는 종류(왕복)로 되돌린다"였지만, 이제
+        // 되돌아갈 이전 목록 자체가 없다 — 조건이 바뀐 요청이 시작되는 순간 곧바로
+        // 지워졌기 때문이다. 그래서 오류 화면이 맞다. 왕복 목록이 그대로 Success로
+        // 남아있으면(예전 동작) 이 assert가 실패한다.
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Error)
+    }
+
+    @Test
+    fun `여정 종류 변경이 실패하면 토글을 되돌리지 않는다`() = runTest {
+        // 목록은 조건이 바뀐 조회 실패로 이미 오류 화면이 됐다 — 되돌아갈 데이터가
+        // 없으니 토글도 사용자가 마지막으로 누른 값 그대로 둔다. revertTripType이
+        // 있던 시절과 달리, "화면 표시와 데이터가 어긋난다"는 문제 자체가 생기지
+        // 않는다 — 어긋날 데이터(이전 목록)가 화면에 없기 때문이다.
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+            FakeSettingsRepository(),
+        )
+        advanceUntilIdle()
         assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
+
+        repository.nextResult = AppResult.NetworkError(IOException())
+        viewModel.setTripType(TripType.ONE_WAY)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Error)
+        assertEquals(TripType.ONE_WAY, viewModel.tripType.value)
     }
 
     @Test
@@ -694,28 +720,9 @@ class DealFeedViewModelTest {
         }
     }
 
-    @Test
-    fun `여정 종류 변경이 실패하면 토글도 되돌린다`() = runTest {
-        // 토글만 바뀌고 목록은 이전 종류 그대로 남으면, 화면이 "편도"라고 말하면서
-        // 왕복 가격을 보여준다. 그 상태에서 추적을 누르면 왕복 견적이 편도로 저장돼
-        // 이후 변동 판정이 전부 어긋난다.
-        val repository = SwitchableRepository()
-        val viewModel = DealFeedViewModel(
-            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
-            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
-            FakeSettingsRepository(),
-        )
-        advanceUntilIdle()
-        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
-
-        repository.nextResult = AppResult.NetworkError(IOException())
-        viewModel.setTripType(TripType.ONE_WAY)
-        advanceUntilIdle()
-
-        // 목록이 왕복 그대로 남았으니 토글도 왕복이어야 한다.
-        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
-        assertEquals(TripType.ROUND_TRIP, viewModel.tripType.value)
-    }
+    // 예전에는 여기에 `여정 종류 변경이 실패하면 토글도 되돌린다`가 있었다. 같은
+    // 시나리오(편도로 바꿨는데 실패)를 위의 `여정 종류 변경이 실패하면 토글을
+    // 되돌리지 않는다`가 새 규칙에 맞는 결과(Error, 토글은 편도 그대로)로 대신한다.
 
     @Test
     fun `여정 종류 변경이 성공하면 토글은 새 값을 유지한다`() = runTest {
@@ -806,5 +813,78 @@ class DealFeedViewModelTest {
 
         assertEquals(busan, viewModel.origin.value)
         assertEquals(before + 1, repo.calls)
+    }
+
+    /** 특정 출발지([emptyFor])만 빈 결과를 돌려주는 스텁. 제주처럼 어떤 목적지도 데이터가 없는 출발지를 흉내낸다. */
+    private inner class OriginAwareRepository(
+        private val emptyFor: Airport,
+    ) : FlightPriceRepository {
+        override suspend fun cheapestDeals(
+            origin: Airport,
+            limit: Int,
+            tripType: TripType,
+        ): AppResult<List<PriceQuote>> {
+            delay(10L)
+            return if (origin == emptyFor) AppResult.Empty else AppResult.Success(listOf(quote(189_000)))
+        }
+
+        override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+            AppResult.Empty
+
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<CalendarDeals> =
+            AppResult.Empty
+
+        override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
+            AppResult.Empty
+
+        override suspend fun trackedPrice(
+            route: Route, departDate: LocalDate, returnDate: LocalDate?, tripType: TripType,
+        ): AppResult<Won> = AppResult.Empty
+    }
+
+    @Test
+    fun `출발지를 바꾼 조회가 빈 결과면 이전 출발지의 목록을 보여주지 않는다`() = runTest {
+        // 실제 결함 재현: 제주는 어떤 목적지도 데이터가 없다. 인천 목록이 화면에
+        // 떠 있는 채로 제주를 고르면, "제주 출발"이라는 라벨 아래 인천 가격이
+        // 그대로 남아있으면 안 된다 — Empty 화면이어야 한다.
+        val jeju = Airport("CJU", "제주", "대한민국")
+        val settings = FakeSettingsRepository()
+        val repository = OriginAwareRepository(emptyFor = jeju)
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+            settings,
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+
+        settings.setOrigin(jeju)
+        advanceUntilIdle()
+
+        // 출발지가 바뀐 조회이므로 Empty가 그대로 화면에 반영돼야 한다. 인천 목록이
+        // 남아있는 Success면(예전 동작) 이 assert가 실패한다.
+        assertEquals(DealFeedUiState.Empty, viewModel.uiState.value)
+    }
+
+    @Test
+    fun `같은 조건을 다시 조회했을 때 빈 결과면 목록을 유지한다`() = runTest {
+        // 위 테스트의 반대쪽 절반. 조건이 같은 새로고침이 빈 결과를 돌려주면
+        // (예: 방금까지 있던 특가가 방금 사라졌다면) 화면에 떠 있는 목록은 그대로
+        // 유지해야 한다 — 이 테스트가 없으면 "조건이 바뀌었을 때만 지운다"는 규칙이
+        // "항상 지운다"로 뭉개져도 걸리지 않는다.
+        val repository = SwitchableRepository()
+        val viewModel = DealFeedViewModel(
+            GetDealFeedUseCase(repository, CalculateDiscountUseCase()),
+            TrackRouteUseCase(RecordingTrackedRoutes(), NoopHistory()),
+            FakeSettingsRepository(),
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
+
+        repository.nextResult = AppResult.Empty
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is DealFeedUiState.Success)
     }
 }

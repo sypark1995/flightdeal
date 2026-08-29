@@ -48,16 +48,20 @@ class DealFeedViewModel @Inject constructor(
     val tripType: StateFlow<TripType> = _tripType.asStateFlow()
 
     /**
-     * 지금 화면에 떠 있는 목록이 실제로 어떤 여정 종류의 결과인지.
+     * 지금 화면에 떠 있는 목록이 실제로 어떤 출발지·여정 종류의 결과인지.
      *
-     * `_tripType`은 토글을 누른 순간 바뀌지만, 목록은 "이미 보여줄 데이터가 있으면
-     * Loading으로 되돌리지 않는다" 정책 때문에 새 조회가 끝날 때까지 이전 종류
-     * 그대로 화면에 남는다. 그 사이 토글이 다시 실패해 되돌아갈 곳은 "마지막으로
-     * 탭한 값"이 아니라 "지금 화면이 들고 있는 데이터의 종류"다 — 탭을 연타하면
-     * 이 둘은 서로 다른 값이 된다. 그래서 탭 시점의 값을 캡처해 되돌리지 않고,
-     * 요청이 성공해 화면에 실제로 반영됐을 때만 이 값을 갱신한다.
+     * "이미 보여줄 데이터가 있으면 실패해도 목록을 유지한다"는 정책은 **같은 조건을
+     * 다시 물어본 요청**(새로고침, 같은 값으로의 재조회)에만 적용해야 한다. 조건이
+     * 바뀐 요청(다른 출발지·다른 여정 종류)이 실패하거나 빈 결과면, 화면에 남아있는
+     * 목록은 이번 질문에 대한 답이 아니므로 유지할 근거가 없다 — 인천 목록을 띄워둔
+     * 채로 제주로 바꿨는데 제주가 빈 결과라면, 화면은 "제주 출발"이라 말하면서 인천
+     * 가격을 보여주게 된다. 그래서 이번 요청이 "같은 조건"인지 판단할 기준으로
+     * `_origin`/`_tripType`(탭한 즉시 바뀌는 값)이 아니라, 화면에 실제로 반영된
+     * 마지막 결과가 어떤 조건이었는지를 별도로 들고 있는다. 요청이 성공하거나
+     * 빈 결과로 화면에 실제로 반영됐을 때만 이 값을 갱신한다.
      */
     private var loadedTripType = TripType.ROUND_TRIP
+    private var loadedOrigin = Airport.INCHEON
 
     /**
      * 일회성 안내. `StateFlow`로 두면 화면 회전 때 같은 메시지가 다시 뜬다 —
@@ -135,7 +139,15 @@ class DealFeedViewModel @Inject constructor(
             // 사용자가 다른 공항을 고르면 [_origin]이 먼저 바뀌어, 나중에 다시 읽으면
             // 이 요청이 실제로 물어본 공항이 아닐 수 있다.
             val requestedOrigin = _origin.value
-            if (!hadData) _uiState.value = DealFeedUiState.Loading
+
+            // 핵심 규칙: 같은 조건일 때만 목록을 유지한다. 화면에 떠 있는 목록이
+            // 지금 이 요청과 같은 출발지·여정 종류의 결과일 때만 "실패해도 지우지
+            // 않는다" 정책을 쓴다. 조건이 다르면(출발지나 종류가 바뀌었으면) 화면의
+            // 목록은 이번 질문에 대한 답이 아니므로 유지할 근거가 없다 — 곧바로
+            // Loading으로 비우고, 결과가 무엇이든(Success/Empty/Error) 그대로 보여준다.
+            val sameQuery = requestedOrigin == loadedOrigin && requestedTripType == loadedTripType
+            val keepOnFailure = hadData && sameQuery
+            if (!keepOnFailure) _uiState.value = DealFeedUiState.Loading
 
             val nextState = try {
                 when (val result = getDealFeed(requestedOrigin, requestedTripType)) {
@@ -159,38 +171,32 @@ class DealFeedViewModel @Inject constructor(
                 DealFeedUiState.Error(retryable = false)
             }
 
-            // 이미 목록이 떠 있는데 이번 조회가 오류로 실패했다면, 오래된 값을
-            // 최신인 것처럼 보여주는 셈이니 목록은 유지하되 실패했다는 사실은
-            // 스낵바로 알린다. Empty는 오류가 아니다 — 목록이 있었다면 조용히
-            // 유지하고(빈 결과로 덮지 않는다), 없었다면 Empty 화면이 맞다.
+            // 같은 조건인데 목록이 떠 있는 상태에서 이번 조회가 오류로 실패했다면,
+            // 오래된 값을 최신인 것처럼 보여주는 셈이니 목록은 유지하되 실패했다는
+            // 사실은 스낵바로 알린다. Empty는 오류가 아니다 — 같은 조건에서 목록이
+            // 있었다면 조용히 유지하고(빈 결과로 덮지 않는다), 없었다면 Empty
+            // 화면이 맞다. 조건이 바뀐 요청이면(keepOnFailure == false) 이 두
+            // 분기에 걸리지 않고 아래 else로 내려가 결과를 그대로 반영한다 — 유지할
+            // 이전 목록 자체가 없기 때문이다.
             when {
-                hadData && nextState is DealFeedUiState.Error -> {
-                    revertTripType()
+                keepOnFailure && nextState is DealFeedUiState.Error ->
                     _messages.tryEmit("가격을 새로 받아오지 못했어요")
-                }
-                hadData && nextState is DealFeedUiState.Empty -> revertTripType()
+                keepOnFailure && nextState is DealFeedUiState.Empty -> Unit
                 else -> {
                     _uiState.value = nextState
-                    // 화면에 실제로 반영된 요청의 종류로만 갱신한다 — 실패한 요청이
-                    // 물어봤던 종류로 갱신하면 [revertTripType]이 되돌릴 기준 자체가
-                    // 틀어진다.
-                    if (nextState is DealFeedUiState.Success) loadedTripType = requestedTripType
+                    // 화면이 이번 요청의 결과를 실제로 받아들였을 때만(성공 또는
+                    // 빈 결과) "화면이 지금 어떤 조건을 보여주고 있는지"를 갱신한다.
+                    // Error는 여기서 제외한다 — Error는 이전 화면을 그대로 둔 채
+                    // 끝나는 게 아니라(그건 위 keepOnFailure 분기의 일) 새로 Error
+                    // 화면을 보여주는 것이므로, 이 요청이 물어본 조건을 "화면이 지금
+                    // 보여주는 것"으로 기록하면 안 된다 — 화면에는 아무 데이터도 없다.
+                    if (nextState is DealFeedUiState.Success || nextState is DealFeedUiState.Empty) {
+                        loadedTripType = requestedTripType
+                        loadedOrigin = requestedOrigin
+                    }
                 }
             }
         }
-    }
-
-    /**
-     * 목록을 갱신하지 못했으면 토글을 "지금 화면이 들고 있는 데이터의 종류"로 되돌린다.
-     *
-     * 마지막으로 탭한 값으로 되돌리지 않는다. 토글을 연달아 누르면 탭 시점의 값과
-     * 화면에 실제로 남아 있는 데이터의 종류가 서로 달라질 수 있어서다. 목록은 유지하면서
-     * 토글만 어긋난 값으로 두면 화면이 "편도"라고 말하면서 왕복 가격을 보여준다.
-     * 표시가 어긋나는 데서 끝나지 않는다 — [track]이 이제는 견적 자체에서 종류를
-     * 읽지만, 그래도 화면 표시와 실제 데이터가 다르면 사용자가 보고 판단하는 근거가 어긋난다.
-     */
-    private fun revertTripType() {
-        _tripType.value = loadedTripType
     }
 
     /**
