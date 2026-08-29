@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.feed.formatWon
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
@@ -35,10 +36,22 @@ import com.sypark.flightdeal.ui.theme.FlightDealTheme
 fun TrackedRouteCard(
     item: TrackedItem,
     onUntrack: () -> Unit,
+    onSetTarget: (Won?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showConfirm by remember { mutableStateOf(false) }
+    var showTargetDialog by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
+
+    if (showTargetDialog) {
+        TargetPriceDialog(
+            currentPrice = item.latest?.price,
+            existingTarget = item.tracked.targetPrice,
+            onDismiss = { showTargetDialog = false },
+            onSave = { target -> showTargetDialog = false; onSetTarget(target) },
+            onClear = { showTargetDialog = false; onSetTarget(null) },
+        )
+    }
 
     if (showConfirm) {
         AlertDialog(
@@ -141,14 +154,22 @@ fun TrackedRouteCard(
             }
         }
 
-        item.tracked.targetPrice?.let { target ->
-            Text(
-                text = "목표가 ${formatWon(target)}",
-                color = FlightDealTheme.colors.textSecondary,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
+        // 목표가가 없을 때도 "목표가 설정"을 보여준다. 없으면 설정할 방법이 없다는 게
+        // 지금까지의 문제였다. 색으로 누를 수 있다는 걸 나타낸다.
+        Text(
+            text = item.tracked.targetPrice?.let { "목표가 ${formatWon(it)}" } ?: "목표가 설정",
+            color = FlightDealTheme.colors.indigo,
+            fontSize = 11.sp,
+            modifier = Modifier
+                .padding(top = 4.dp)
+                // 카드 전체가 펼침/접힘 클릭 대상이다. 안쪽 요소에 직접 clickable을
+                // 붙여야 그 탭이 부모까지 번지지 않는다 — 해제 버튼과 같은 방식이다.
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { showTargetDialog = true }
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .wrapContentSize(Alignment.CenterStart)
+                .padding(horizontal = 4.dp),
+        )
 
         if (expanded) {
             PriceChart(

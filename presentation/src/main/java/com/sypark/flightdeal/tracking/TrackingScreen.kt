@@ -58,7 +58,11 @@ fun TrackingScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(items = current.items, key = { it.tracked.id }) { item ->
-                    TrackedRouteCard(item = item, onUntrack = { viewModel.untrack(item.tracked.id) })
+                    TrackedRouteCard(
+                        item = item,
+                        onUntrack = { viewModel.untrack(item.tracked.id) },
+                        onSetTarget = { target -> viewModel.setTarget(item.tracked.id, target) },
+                    )
                 }
             }
         }

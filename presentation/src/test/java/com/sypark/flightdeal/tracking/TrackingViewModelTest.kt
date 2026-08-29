@@ -10,6 +10,7 @@ import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
+import com.sypark.flightdeal.domain.usecase.SetTargetPriceUseCase
 import com.sypark.flightdeal.domain.usecase.UntrackRouteUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -96,7 +97,7 @@ class TrackingViewModelTest {
     private fun viewModel(
         routes: TrackedRouteRepository,
         history: PriceHistoryRepository,
-    ) = TrackingViewModel(routes, history, UntrackRouteUseCase(routes), clock)
+    ) = TrackingViewModel(routes, history, UntrackRouteUseCase(routes), SetTargetPriceUseCase(routes), clock)
 
     @Test
     fun `추적 항목이 없으면 빈 상태다`() = runTest {
@@ -207,10 +208,12 @@ class TrackingViewModelTest {
     @Test
     fun `출발일이 지나면 지난 여정으로 표시한다`() = runTest {
         val pastClock = Clock.fixed(Instant.parse("2026-10-20T00:00:00Z"), ZoneOffset.UTC)
+        val pastRoutes = FakeRoutes(listOf(tracked())) // departDate = 2026-10-12
         val vm = TrackingViewModel(
-            FakeRoutes(listOf(tracked())), // departDate = 2026-10-12
+            pastRoutes,
             FakeHistory(listOf(snapshot(300_000, 100))),
-            UntrackRouteUseCase(FakeRoutes(listOf(tracked()))),
+            UntrackRouteUseCase(pastRoutes),
+            SetTargetPriceUseCase(pastRoutes),
             pastClock,
         )
 
@@ -246,5 +249,29 @@ class TrackingViewModelTest {
             assertEquals(TrackingUiState.Empty, awaitItem())
         }
         assertEquals(1L, routes.removed)
+    }
+
+    @Test
+    fun `목표가를 저장하면 저장소에 전달된다`() = runTest {
+        val routes = FakeRoutes(listOf(tracked()))
+        val vm = viewModel(routes, FakeHistory(listOf(snapshot(300_000, 100))))
+
+        vm.setTarget(1L, Won(250_000))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1L, routes.lastTargetId)
+        assertEquals(Won(250_000), routes.lastTarget)
+    }
+
+    @Test
+    fun `해제하면 null이 전달된다`() = runTest {
+        val routes = FakeRoutes(listOf(tracked()))
+        val vm = viewModel(routes, FakeHistory(listOf(snapshot(300_000, 100))))
+
+        vm.setTarget(1L, null)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1L, routes.lastTargetId)
+        assertNull(routes.lastTarget)
     }
 }
