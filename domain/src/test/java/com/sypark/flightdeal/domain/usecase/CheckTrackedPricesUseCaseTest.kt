@@ -62,6 +62,10 @@ class CheckTrackedPricesUseCaseTest {
             val index = state.indexOfFirst { it.id == id }
             if (index != -1) state[index] = state[index].copy(notifiedPrice = price)
         }
+        override suspend fun setTargetPrice(id: Long, target: Won?) {
+            val index = state.indexOfFirst { it.id == id }
+            if (index != -1) state[index] = state[index].copy(targetPrice = target)
+        }
     }
 
     // latest()는 이미 쓴 스냅샷을 먼저 본다. 초기값 last는 등록 시점의 이력을 흉내낸다.

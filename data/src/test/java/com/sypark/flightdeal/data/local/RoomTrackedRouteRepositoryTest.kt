@@ -236,4 +236,35 @@ class RoomTrackedRouteRepositoryTest {
         // 화면이 "편도"인데 귀국일 자리에 빈칸이 생긴다.
         assertNull(tracked.observeAll().first().single().returnDate)
     }
+
+    @Test
+    fun `목표가를 저장한다`() = runTest {
+        val id = addTokyo()
+
+        tracked.setTargetPrice(id, Won(250_000))
+
+        assertEquals(Won(250_000), tracked.observeAll().first().single().targetPrice)
+    }
+
+    @Test
+    fun `null을 넣으면 목표가가 해제된다`() = runTest {
+        val id = addTokyo()
+
+        tracked.setTargetPrice(id, null)
+
+        assertNull(tracked.observeAll().first().single().targetPrice)
+    }
+
+    @Test
+    fun `목표가를 바꿔도 통보 기준선은 그대로다`() = runTest {
+        val id = addTokyo()
+        tracked.markNotified(id, Won(300_000))
+
+        tracked.setTargetPrice(id, Won(250_000))
+
+        // 기준선이 함께 바뀌면 다음 폴링에서 없던 변동이 잡힌다.
+        val saved = tracked.observeAll().first().single()
+        assertEquals(Won(250_000), saved.targetPrice)
+        assertEquals(Won(300_000), saved.notifiedPrice)
+    }
 }

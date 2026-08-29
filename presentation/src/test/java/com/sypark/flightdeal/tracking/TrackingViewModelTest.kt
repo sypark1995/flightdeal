@@ -70,6 +70,13 @@ class TrackingViewModelTest {
             state.value = state.value.filterNot { it.id == id }
         }
         override suspend fun markNotified(id: Long, price: Won) = Unit
+        var lastTargetId: Long? = null
+        var lastTarget: Won? = null
+        override suspend fun setTargetPrice(id: Long, target: Won?) {
+            lastTargetId = id
+            lastTarget = target
+            state.value = state.value.map { if (it.id == id) it.copy(targetPrice = target) else it }
+        }
     }
 
     private class FakeHistory(private val snapshots: List<PriceSnapshot>) : PriceHistoryRepository {

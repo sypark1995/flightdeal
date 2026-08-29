@@ -69,6 +69,9 @@ class RoomTrackedRouteRepository(
     override suspend fun markNotified(id: Long, price: Won) =
         dao.updateNotifiedPrice(id, price.amount)
 
+    override suspend fun setTargetPrice(id: Long, target: Won?) =
+        dao.updateTargetPrice(id, target?.amount)
+
     /**
      * DB에는 IATA만 저장한다. 도시 이름은 표시용이므로 읽을 때 채운다 —
      * 이름이 바뀌어도 저장된 데이터를 건드릴 일이 없다.
