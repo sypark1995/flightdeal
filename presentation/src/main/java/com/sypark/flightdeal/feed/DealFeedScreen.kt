@@ -40,6 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sypark.flightdeal.booking.BookingLauncher
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.ui.OriginSelector
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 @Composable
@@ -79,6 +80,9 @@ fun DealFeedScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(16.dp),
             )
+
+            val origin by viewModel.origin.collectAsStateWithLifecycle()
+            OriginSelector(origin = origin, onSelect = viewModel::selectOrigin)
 
             // 입력창처럼 생겼으면 눌렀을 때 무언가 해야 한다. 목업에서 넘어온 채로
             // 오래 장식으로만 남아 있었다 — 화면에서 가장 눈에 띄는 자리가

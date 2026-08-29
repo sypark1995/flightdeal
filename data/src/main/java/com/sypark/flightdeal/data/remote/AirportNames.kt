@@ -9,15 +9,19 @@ import com.sypark.flightdeal.domain.model.Airport
 object AirportNames {
 
     /**
-     * 이 앱이 실제로 다루는 목적지(와 인천)의 도시명은 여기서 다시 적지 않는다.
-     * `Airport.DESTINATIONS`/`Airport.INCHEON`이 이미 그 값을 들고 있다 — 여기에도
+     * 이 앱이 실제로 다루는 목적지·출발지(`Airport.DESTINATIONS`, `Airport.ORIGINS`)의
+     * 도시명은 여기서 다시 적지 않는다. 그 목록들이 이미 그 값을 들고 있다 — 여기에도
      * "TYO" to "도쿄"를 따로 적으면 두 표가 같은 사실을 각자 말하게 되고, `Airport.kt`가
      * 나중에 바뀌어도 이 표는 조용히 그대로 남아 둘이 어긋난다. 그래서 이 표에는
-     * `Airport`가 모르는 보조 코드(같은 도시의 다른 공항, 국내선, 이 앱이 목적지로
-     * 다루지 않는 도시)만 남긴다.
+     * `Airport`가 모르는 보조 코드(같은 도시의 다른 공항, 국내선, 이 앱이 다루지 않는 도시)만
+     * 남긴다.
+     *
+     * `SEL`은 예외로 남긴다 — `Airport.ORIGINS`에는 없지만(도시 코드라 선택지에 넣지
+     * 않기로 했다) 응답의 `origin` 필드에 실제로 온다. `PriceQuoteMapper`가
+     * `originAirport`를 우선하므로 보통 안 쓰이지만, 폴백으로 쓰일 때를 대비해 둔다.
      */
     private val ADDITIONAL_CITIES = mapOf(
-        "SEL" to "서울", "GMP" to "서울", "PUS" to "부산", "CJU" to "제주",
+        "SEL" to "서울",
         "NRT" to "도쿄", "HND" to "도쿄",
         "OSA" to "오사카", "KIX" to "오사카", "FUK" to "후쿠오카", "CTS" to "삿포로",
         "OKA" to "오키나와", "NGO" to "나고야",
@@ -32,7 +36,7 @@ object AirportNames {
     )
 
     private val CITIES: Map<String, String> =
-        (Airport.DESTINATIONS + Airport.INCHEON).associate { it.iata to it.cityKo } + ADDITIONAL_CITIES
+        (Airport.DESTINATIONS + Airport.ORIGINS).associate { it.iata to it.cityKo } + ADDITIONAL_CITIES
 
     fun cityOf(iata: String): String = CITIES[iata] ?: iata
 }

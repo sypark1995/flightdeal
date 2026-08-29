@@ -126,7 +126,7 @@ class PriceQuoteMapperTest {
         // 개수만 세는 검사는 2번째 이후 레코드가 망가져도 통과한다. 전부 훑는다.
         quotes.forEach { quote ->
             assertEquals("ICN", quote.route.origin.iata)
-            assertEquals("서울", quote.route.origin.cityKo)
+            assertEquals("인천", quote.route.origin.cityKo)
             assertEquals("TYO", quote.route.destination.iata)
             assertEquals("도쿄", quote.route.destination.cityKo)
             assertTrue("가격이 0 이하: ${quote.price.amount}", quote.price.amount > 0)

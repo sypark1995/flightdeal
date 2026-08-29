@@ -1,6 +1,12 @@
 package com.sypark.flightdeal.data.di
 
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStoreFile
 import com.sypark.flightdeal.data.BuildConfig
+import com.sypark.flightdeal.data.local.DataStoreSettingsRepository
 import com.sypark.flightdeal.data.local.PriceSnapshotDao
 import com.sypark.flightdeal.data.local.RoomPriceHistoryRepository
 import com.sypark.flightdeal.data.local.RoomTrackedRouteRepository
@@ -9,10 +15,12 @@ import com.sypark.flightdeal.data.remote.TravelpayoutsApi
 import com.sypark.flightdeal.data.remote.TravelpayoutsFlightPriceRepository
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
+import com.sypark.flightdeal.domain.repository.SettingsRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.time.Clock
 import javax.inject.Singleton
@@ -52,4 +60,18 @@ object RepositoryModule {
     @Singleton
     fun providePriceHistoryRepository(dao: PriceSnapshotDao, clock: Clock): PriceHistoryRepository =
         RoomPriceHistoryRepository(dao, clock)
+
+    /**
+     * 설정값 하나(출발 공항)만 저장할 DataStore. Room을 새로 끌어오지 않는다 —
+     * 스키마·마이그레이션이 필요 없는 값 하나에 테이블을 만들 이유가 없다.
+     */
+    @Provides
+    @Singleton
+    fun provideSettingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
+        PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
+
+    @Provides
+    @Singleton
+    fun provideSettingsRepository(dataStore: DataStore<Preferences>): SettingsRepository =
+        DataStoreSettingsRepository(dataStore)
 }

@@ -8,6 +8,7 @@ import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.DEFAULT_LEAD_MONTHS
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.repository.SettingsRepository
 import com.sypark.flightdeal.domain.usecase.GetMonthCalendarUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -32,10 +33,20 @@ import javax.inject.Inject
 class CalendarViewModel @Inject constructor(
     private val getMonthCalendar: GetMonthCalendarUseCase,
     private val clock: Clock,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<CalendarUiState>(CalendarUiState.Loading)
     val uiState: StateFlow<CalendarUiState> = _uiState.asStateFlow()
+
+    private val _origin = MutableStateFlow(Airport.INCHEON)
+    val origin: StateFlow<Airport> = _origin.asStateFlow()
+
+    /**
+     * [DealFeedViewModel]과 같은 이유로 둔다 — 초깃값(인천)과 저장된 값이 우연히
+     * 같으면 값 비교만으로는 최초 조회를 트리거할 수 없다.
+     */
+    private var originLoaded = false
 
     // 딜 피드가 도쿄를 기본으로 보여준다. 캘린더도 같은 목적지로 시작해야
     // 탭을 오갈 때 같은 여정을 계속 보는 것처럼 느껴진다.
@@ -84,7 +95,18 @@ class CalendarViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     init {
-        refresh()
+        // DealFeedViewModel과 같은 이유(초기 깜빡임 방지)로 refresh()를 바로 부르지
+        // 않고 DataStore의 첫 값을 기다린다. 피드에서 출발지를 바꿔도 이 collect가
+        // 다시 값을 받아 여기서도 조회한다 — 두 화면이 다른 출발지를 보여줄 일이 없다.
+        viewModelScope.launch {
+            settings.observeOrigin().collect { newOrigin ->
+                val changed = originLoaded && newOrigin != _origin.value
+                _origin.value = newOrigin
+                val shouldLoad = !originLoaded || changed
+                originLoaded = true
+                if (shouldLoad) refresh()
+            }
+        }
     }
 
     /** 같은 목적지를 다시 고르면 조회하지 않는다. */
@@ -92,6 +114,15 @@ class CalendarViewModel @Inject constructor(
         if (_destination.value == airport) return
         _destination.value = airport
         refresh()
+    }
+
+    /**
+     * 출발지를 고르면 DataStore에 저장한다. [DealFeedViewModel.selectOrigin]과 같은
+     * 이유로 화면 상태를 여기서 직접 바꾸지 않는다 — [init]의 collect가 저장된 값을
+     * 다시 읽어와 반영해야 피드 화면과 항상 같은 값을 본다.
+     */
+    fun selectOrigin(airport: Airport) {
+        viewModelScope.launch { settings.setOrigin(airport) }
     }
 
     fun nextMonth() {
@@ -124,7 +155,7 @@ class CalendarViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             _uiState.value = CalendarUiState.Loading
 
-            val route = Route(Airport.INCHEON, _destination.value)
+            val route = Route(_origin.value, _destination.value)
             _uiState.value = try {
                 when (val result = getMonthCalendar(route, _month.value, _tripType.value)) {
                     is AppResult.Success -> CalendarUiState.Success(result.data)
