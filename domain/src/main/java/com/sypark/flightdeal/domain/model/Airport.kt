@@ -17,8 +17,22 @@ class Airport(
     override fun toString(): String = "Airport($iata, $cityKo)"
 
     companion object {
-        /** 기본 출발지. 설정 화면이 생기면 DataStore에서 읽어온다. */
-        val INCHEON = Airport("ICN", "서울", "대한민국")
+        /** 기본 출발지. */
+        val INCHEON = Airport("ICN", "인천", "대한민국")
+
+        /**
+         * 고를 수 있는 출발 공항.
+         *
+         * **도시 코드(`SEL`)를 넣지 마라.** 그건 인천과 김포를 함께 가리켜서,
+         * 조회는 `SEL`로 하고 저장은 행마다 `ICN`/`GMP`로 갈린다. 같은 노선이
+         * 두 줄로 나뉘고 할인 기준선도 카드마다 다른 분포에서 계산된다.
+         */
+        val ORIGINS = listOf(
+            INCHEON,
+            Airport("GMP", "김포", "대한민국"),
+            Airport("PUS", "부산", "대한민국"),
+            Airport("CJU", "제주", "대한민국"),
+        )
 
         /**
          * 이 앱이 다루는 인천 출발 목적지.

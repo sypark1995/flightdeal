@@ -81,7 +81,7 @@ class RoomTrackedRouteRepositoryTest {
 
         // DB에는 IATA만 있다. 화면은 "TYO"가 아니라 "도쿄"를 보여줘야 한다.
         assertEquals("도쿄", saved.route.destination.cityKo)
-        assertEquals("서울", saved.route.origin.cityKo)
+        assertEquals("인천", saved.route.origin.cityKo)
     }
 
     @Test
