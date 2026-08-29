@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sypark.flightdeal.domain.model.PRICE_HISTORY_RETENTION_DAYS
 import com.sypark.flightdeal.domain.model.TrackedRoute
+import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
+import com.sypark.flightdeal.domain.usecase.SetTargetPriceUseCase
 import com.sypark.flightdeal.domain.usecase.UntrackRouteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,6 +29,7 @@ class TrackingViewModel @Inject constructor(
     trackedRoutes: TrackedRouteRepository,
     private val history: PriceHistoryRepository,
     private val untrackRoute: UntrackRouteUseCase,
+    private val setTargetPrice: SetTargetPriceUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -50,6 +53,10 @@ class TrackingViewModel @Inject constructor(
 
     fun untrack(id: Long) {
         viewModelScope.launch { untrackRoute(id) }
+    }
+
+    fun setTarget(id: Long, target: Won?) {
+        viewModelScope.launch { setTargetPrice(id, target) }
     }
 
     /**

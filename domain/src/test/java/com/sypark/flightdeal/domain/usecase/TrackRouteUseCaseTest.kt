@@ -85,6 +85,10 @@ class TrackRouteUseCaseTest {
         }
         override suspend fun remove(id: Long) { removed = id }
         override suspend fun markNotified(id: Long, price: Won) = Unit
+        override suspend fun setTargetPrice(id: Long, target: Won?) {
+            val index = added.indexOfFirst { it.id == id }
+            if (index != -1) added[index] = added[index].copy(targetPrice = target)
+        }
     }
 
     private class FakeHistory : PriceHistoryRepository {

@@ -36,4 +36,12 @@ interface TrackedRouteRepository {
 
     /** 알림이 실제로 전달된 뒤에만 부른다. */
     suspend fun markNotified(id: Long, price: Won)
+
+    /**
+     * 목표가를 정하거나(null이면) 해제한다.
+     *
+     * `notifiedPrice`(통보 기준선)는 건드리지 않는다. 기준선을 함께 초기화하면
+     * 다음 폴링에서 그동안의 가격 변동이 전부 새 변동으로 잡힌다.
+     */
+    suspend fun setTargetPrice(id: Long, target: Won?)
 }

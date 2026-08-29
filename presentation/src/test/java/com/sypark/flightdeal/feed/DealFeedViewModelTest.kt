@@ -453,6 +453,7 @@ class DealFeedViewModelTest {
         }
         override suspend fun remove(id: Long) = Unit
         override suspend fun markNotified(id: Long, price: Won) = Unit
+        override suspend fun setTargetPrice(id: Long, target: Won?) = Unit
     }
 
     private class NoopHistory : PriceHistoryRepository {
@@ -478,6 +479,7 @@ class DealFeedViewModelTest {
         ): TrackRegistration = throw IOException("boom")
         override suspend fun remove(id: Long) = Unit
         override suspend fun markNotified(id: Long, price: Won) = Unit
+        override suspend fun setTargetPrice(id: Long, target: Won?) = Unit
     }
 
     @Test

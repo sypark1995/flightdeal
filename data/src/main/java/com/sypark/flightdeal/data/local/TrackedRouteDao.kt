@@ -38,6 +38,10 @@ interface TrackedRouteDao {
     @Query("UPDATE tracked_route SET notifiedPrice = :price WHERE id = :id")
     suspend fun updateNotifiedPrice(id: Long, price: Int)
 
+    /** notifiedPrice(통보 기준선)는 건드리지 않는다. */
+    @Query("UPDATE tracked_route SET targetPrice = :target WHERE id = :id")
+    suspend fun updateTargetPrice(id: Long, target: Int?)
+
     @Query("DELETE FROM tracked_route WHERE id = :id")
     suspend fun deleteById(id: Long)
 }
