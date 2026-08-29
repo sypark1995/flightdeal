@@ -7,13 +7,16 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.sypark.flightdeal.data.BuildConfig
 import com.sypark.flightdeal.data.local.DataStoreSettingsRepository
+import com.sypark.flightdeal.data.local.PriceAlertDao
 import com.sypark.flightdeal.data.local.PriceSnapshotDao
+import com.sypark.flightdeal.data.local.RoomPriceAlertRepository
 import com.sypark.flightdeal.data.local.RoomPriceHistoryRepository
 import com.sypark.flightdeal.data.local.RoomTrackedRouteRepository
 import com.sypark.flightdeal.data.local.TrackedRouteDao
 import com.sypark.flightdeal.data.remote.TravelpayoutsApi
 import com.sypark.flightdeal.data.remote.TravelpayoutsFlightPriceRepository
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
+import com.sypark.flightdeal.domain.repository.PriceAlertRepository
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.SettingsRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
@@ -60,6 +63,11 @@ object RepositoryModule {
     @Singleton
     fun providePriceHistoryRepository(dao: PriceSnapshotDao, clock: Clock): PriceHistoryRepository =
         RoomPriceHistoryRepository(dao, clock)
+
+    @Provides
+    @Singleton
+    fun providePriceAlertRepository(dao: PriceAlertDao, clock: Clock): PriceAlertRepository =
+        RoomPriceAlertRepository(dao, clock)
 
     /**
      * 설정값 하나(출발 공항)만 저장할 DataStore. Room을 새로 끌어오지 않는다 —

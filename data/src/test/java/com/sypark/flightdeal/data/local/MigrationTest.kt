@@ -70,6 +70,50 @@ class MigrationTest {
         migrated.close()
     }
 
+    /**
+     * `price_alert` 테이블은 v2에 없던 새 테이블이다. 이 마이그레이션이
+     * `fallbackToDestructiveMigration()`으로 잘못 바뀌면 `tracked_route`와
+     * `price_snapshot`에 며칠에 걸쳐 쌓인 행이 통째로 사라진다 — 그건 다시
+     * 만들어낼 수 없다. v2로 열어 두 테이블에 행을 넣고 마이그레이션한 뒤
+     * 둘 다 남아 있고 `price_alert`는 비어 있는(새로 만들어졌을 뿐인) 것을 확인한다.
+     */
+    @Test
+    fun `MIGRATION_2_3은 기존 데이터를 보존한다`() {
+        helper.createDatabase(DB_NAME, 2).apply {
+            execSQL(
+                "INSERT INTO tracked_route " +
+                    "(id, originIata, destinationIata, departDate, returnDate, tripType, " +
+                    "targetPrice, notifiedPrice, createdAt) " +
+                    "VALUES (1, 'ICN', 'TYO', '2026-10-12', '2026-10-16', 'ROUND_TRIP', " +
+                    "280000, 300000, 1800000000)"
+            )
+            execSQL(
+                "INSERT INTO price_snapshot (id, trackedRouteId, price, tripType, capturedAt) " +
+                    "VALUES (1, 1, 300000, 'ROUND_TRIP', 100)"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(DB_NAME, 3, true, MIGRATION_2_3)
+
+        migrated.query("SELECT COUNT(*) FROM tracked_route WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("기존 추적 항목이 남아 있어야 한다", 1, cursor.getInt(0))
+        }
+
+        migrated.query("SELECT COUNT(*) FROM price_snapshot WHERE trackedRouteId = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("기존 가격 이력이 남아 있어야 한다", 1, cursor.getInt(0))
+        }
+
+        migrated.query("SELECT COUNT(*) FROM price_alert").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("price_alert는 새로 만들어질 뿐 비어 있어야 한다", 0, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
+
     private companion object {
         const val DB_NAME = "migration-test"
     }

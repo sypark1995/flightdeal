@@ -2,6 +2,7 @@ package com.sypark.flightdeal.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.sypark.flightdeal.data.local.entity.PriceAlertEntity
 import com.sypark.flightdeal.data.local.entity.PriceSnapshotEntity
 import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
 
@@ -12,11 +13,12 @@ import com.sypark.flightdeal.data.local.entity.TrackedRouteEntity
  * 사용자가 등록한 추적 노선과 이력을 통째로 조용히 지우거나.
  */
 @Database(
-    entities = [TrackedRouteEntity::class, PriceSnapshotEntity::class],
-    version = 2,
+    entities = [TrackedRouteEntity::class, PriceSnapshotEntity::class, PriceAlertEntity::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class FlightDealDatabase : RoomDatabase() {
     abstract fun trackedRouteDao(): TrackedRouteDao
     abstract fun priceSnapshotDao(): PriceSnapshotDao
+    abstract fun priceAlertDao(): PriceAlertDao
 }

@@ -20,3 +20,36 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * 알림 기록(`price_alert`) 테이블을 새로 만들 뿐, 기존 테이블은 건드리지 않는다.
+ * `tracked_route`와 `price_snapshot`에 며칠에 걸쳐 쌓인 데이터가 있는 기기가 실제로
+ * 있으므로 `fallbackToDestructiveMigration()`을 쓰지 않는다.
+ *
+ * SQL은 `data/schemas/.../3.json`이 내보낸 것과 한 글자도 다르지 않게 맞춘다 —
+ * `MigrationTestHelper.runMigrationsAndValidate`가 마이그레이션 뒤 스키마를 그
+ * JSON과 비교하기 때문에, 다르면 마이그레이션은 성공해도 검증에서 실패한다.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `price_alert` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`trackedRouteId` INTEGER NOT NULL, " +
+                "`previous` INTEGER NOT NULL, " +
+                "`current` INTEGER NOT NULL, " +
+                "`reachedTarget` INTEGER NOT NULL, " +
+                "`notifiedAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`trackedRouteId`) REFERENCES `tracked_route`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_price_alert_trackedRouteId` " +
+                "ON `price_alert` (`trackedRouteId`)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_price_alert_notifiedAt` " +
+                "ON `price_alert` (`notifiedAt`)"
+        )
+    }
+}
