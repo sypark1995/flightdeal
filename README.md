@@ -53,7 +53,7 @@ Kotlin 2.1 · Jetpack Compose · Material 3 · Hilt · Coroutines/Flow · Naviga
 Room · WorkManager · Retrofit · Custom Tabs · KSP · Gradle Version Catalog
 
 Java 소스는 한 줄도 없다. compileSdk/targetSdk 36, minSdk 26.
-테스트 232건 (`:domain` 68 · `:data` 97 · `:presentation` 67).
+테스트 237건 (`:domain` 70 · `:data` 100 · `:presentation` 67).
 
 `:domain`이 순수 JVM 모듈인 것은 대체로 이득이지만 대가가 하나 있다 —
 안드로이드 API 레벨을 아무도 검사하지 않는다. `LocalDate.ofInstant`(API 34)를 써서
