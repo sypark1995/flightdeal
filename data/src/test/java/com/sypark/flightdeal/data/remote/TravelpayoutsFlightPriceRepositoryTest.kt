@@ -208,7 +208,7 @@ class TravelpayoutsFlightPriceRepositoryTest {
         )
 
         val deals = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
-            as AppResult.Success).data
+            as AppResult.Success).data.deals
 
         // 더 싸더라도 한국에서 결제가 안 되는 곳이면 소용없다. 딜 피드가 고른 것과 같아야
         // 캘린더를 누르고 들어갔을 때 값이 갈리지 않는다.
@@ -234,7 +234,7 @@ class TravelpayoutsFlightPriceRepositoryTest {
         )
 
         val deals = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
-            as AppResult.Success).data
+            as AppResult.Success).data.deals
 
         // 10/06 자리는 비어야 한다 — 한국에서 예약할 수 없는 곳뿐인 날에 값을
         // 채우면 사용자가 예약을 완료할 수 없는 페이지로 들어간다.
@@ -243,11 +243,56 @@ class TravelpayoutsFlightPriceRepositoryTest {
     }
 
     @Test
+    fun `예약 가능한 곳이 없던 날은 unbookableDates에 담긴다`() = runTest {
+        // 위 테스트와 같은 응답이다 — 10/06은 Kupi.com(CIS)뿐이고 10/07은 Trip.com이다.
+        // 화면이 값이 없던 날과 구별해 보여주려면 10/06이 왜 비었는지를 조회가
+        // 함께 돌려줘야 한다. 새 요청 없이, 이미 가진 원본 응답과 걸러낸 결과의
+        // 차집합으로 구할 수 있어야 한다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-07T15:15:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        assertEquals(setOf(LocalDate.of(2026, 10, 6)), result.unbookableDates)
+    }
+
+    @Test
+    fun `예약 가능한 날은 unbookableDates에 들어가지 않는다`() = runTest {
+        // 10/07은 Trip.com이 있어 deals에도 담긴다. unbookableDates는 예약 가능한
+        // 곳이 하나도 없던 날만 말해야 한다 — 여기 같이 담기면 화면이 값이 있는
+        // 날마저 "—"로 덮어써 버린다.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":[
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-06T15:15:00+09:00",
+                   "price":100000,"airline":"KE","gate":"Kupi.com","link":"/search/a"},
+                  {"origin_airport":"ICN","destination":"TYO","departure_at":"2026-10-07T15:15:00+09:00",
+                   "price":120000,"airline":"KE","gate":"Trip.com","link":"/search/b"}
+                ]}"""
+            )
+        )
+
+        val result = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
+            as AppResult.Success).data
+
+        assertTrue(LocalDate.of(2026, 10, 7) !in result.unbookableDates)
+    }
+
+    @Test
     fun `캘린더 딜은 날짜당 한 건만 남긴다`() = runTest {
         enqueueFixture("v3-ICN-TYO.json")
 
         val deals = (repository.calendarDeals(route, YearMonth.of(2026, 10), TripType.ONE_WAY)
-            as AppResult.Success).data
+            as AppResult.Success).data.deals
 
         assertEquals(deals.size, deals.map { it.departDate }.distinct().size)
     }

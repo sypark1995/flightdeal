@@ -3,6 +3,7 @@ package com.sypark.flightdeal.calendar
 import app.cash.turbine.test
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
@@ -70,9 +71,9 @@ class CalendarViewModelTest {
             route: Route,
             month: YearMonth,
             tripType: TripType,
-        ): AppResult<List<PriceQuote>> {
+        ): AppResult<CalendarDeals> {
             calls++
-            return AppResult.Success(listOf(quote(route.destination, 15, 200_000, month)))
+            return AppResult.Success(CalendarDeals(listOf(quote(route.destination, 15, 200_000, month)), emptySet()))
         }
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType) = AppResult.Empty
@@ -93,10 +94,12 @@ class CalendarViewModelTest {
             route: Route,
             month: YearMonth,
             tripType: TripType,
-        ): AppResult<List<PriceQuote>> {
+        ): AppResult<CalendarDeals> {
             val current = ++calls
             delay(if (current == 1) 1_000L else 10L)
-            return AppResult.Success(listOf(quote(route.destination, 15, 100_000 * current, month)))
+            return AppResult.Success(
+                CalendarDeals(listOf(quote(route.destination, 15, 100_000 * current, month)), emptySet()),
+            )
         }
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType) = AppResult.Empty

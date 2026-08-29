@@ -2,6 +2,7 @@ package com.sypark.flightdeal.data.remote
 
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Airport
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.DEFAULT_LEAD_MONTHS
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
@@ -101,14 +102,25 @@ class TravelpayoutsFlightPriceRepository(
         route: Route,
         month: YearMonth,
         tripType: TripType,
-    ): AppResult<List<PriceQuote>> = call {
+    ): AppResult<CalendarDeals> = callSingle {
         val quotes = fetch(route.origin.iata, route.destination.iata, month, tripType)
+        if (quotes.isEmpty()) return@callSingle null
+
         // 예약처 규칙을 달 전체에 먼저 적용한다. 날짜별로 적용하면 그날 행이 하나뿐일 때
         // 폴백이 매번 걸려, 딜 피드라면 절대 보여주지 않을 CIS 예약처가 달력에는 뜬다.
-        GatePolicy.prioritize(quotes, { it.gate }, minCount = 1)
+        val bookable = GatePolicy.prioritize(quotes, { it.gate }, minCount = 1)
+        val deals = bookable
             .groupBy { it.quote.departDate }
             .mapNotNull { (_, sameDay) -> sameDay.minByOrNull { it.quote.price.amount }?.quote }
             .sortedBy { it.departDate }
+
+        // 원래 응답에는 있었지만 걸러진 뒤 남지 않은 날짜 = 한국에서 예약 가능한 곳이
+        // 하나도 없던 날. 화면이 "값이 없는 날"과 구별해 보여주려면 이걸 알아야 한다.
+        // GatePolicy를 다시 부르지 않는다 — 이미 위에서 계산한 결과의 차집합일 뿐이다.
+        val bookableDates = deals.map { it.departDate }.toSet()
+        val unbookableDates = quotes.map { it.quote.departDate }.toSet() - bookableDates
+
+        CalendarDeals(deals = deals, unbookableDates = unbookableDates)
     }
 
     override suspend fun priceStats(

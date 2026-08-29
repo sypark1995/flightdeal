@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.sypark.flightdeal.data.fake.FakeFlightPriceRepository
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.PriceStats
@@ -139,7 +140,7 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<CalendarDeals> =
             AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
@@ -160,7 +161,7 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<CalendarDeals> =
             AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
@@ -181,7 +182,7 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<CalendarDeals> =
             AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
@@ -257,7 +258,7 @@ class DealFeedViewModelTest {
             AppResult<List<PriceQuote>> = AppResult.Empty
 
         override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType):
-            AppResult<List<PriceQuote>> = AppResult.Empty
+            AppResult<CalendarDeals> = AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
             AppResult<PriceStats> = AppResult.Empty
@@ -351,7 +352,7 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<CalendarDeals> =
             AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =
@@ -579,7 +580,7 @@ class DealFeedViewModelTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
             AppResult.Empty
 
-        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<List<PriceQuote>> =
+        override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType): AppResult<CalendarDeals> =
             AppResult.Empty
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType): AppResult<PriceStats> =

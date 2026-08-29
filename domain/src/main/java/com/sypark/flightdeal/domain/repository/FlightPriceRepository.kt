@@ -2,6 +2,7 @@ package com.sypark.flightdeal.domain.repository
 
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Airport
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
@@ -35,21 +36,22 @@ interface FlightPriceRepository {
     ): AppResult<List<PriceQuote>>
 
     /**
-     * 캘린더 화면이 쓰는, 날짜별 **예약 가능한** 최저가.
+     * 캘린더 화면이 쓰는, 날짜별 **예약 가능한** 최저가와 예약 불가 날짜.
      *
      * [calendarPrices]와 다르다. 저쪽은 할인율 기준선을 만드는 통계용이라 예약처로
      * 거르지 않은 시장 전체의 분포를 준다. 이쪽은 사용자가 눌러서 결제할 화면이므로
      * 딜 피드·가격 추적과 **같은 예약처 규칙**을 쓴다. 규칙이 갈리면 같은 날짜인데
      * 화면마다 다른 숫자가 뜬다.
      *
-     * 날짜당 하나씩, 출발일 오름차순. 예약 가능한 예약처가 하나도 없는 날은 목록에서
-     * 아예 빠진다 — 예약을 완료할 수 없는 곳뿐인 날을 "가격이 있다"고 보여줄 수는 없다.
+     * 예약 가능한 예약처가 하나도 없는 날은 [CalendarDeals.deals]에서 빠지고,
+     * 대신 [CalendarDeals.unbookableDates]에 담긴다 — 애초에 값이 없던 날과
+     * 화면이 구별해서 보여줄 수 있어야 한다.
      */
     suspend fun calendarDeals(
         route: Route,
         month: YearMonth,
         tripType: TripType,
-    ): AppResult<List<PriceQuote>>
+    ): AppResult<CalendarDeals>
 
     /** 한 노선·한 달의 가격 분포. 할인율 배지의 기준. */
     suspend fun priceStats(

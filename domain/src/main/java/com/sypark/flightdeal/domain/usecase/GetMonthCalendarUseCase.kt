@@ -1,8 +1,8 @@
 package com.sypark.flightdeal.domain.usecase
 
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.MonthCalendar
-import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
@@ -34,18 +34,24 @@ class GetMonthCalendarUseCase @Inject constructor(
     }
 
     /**
-     * 날짜당 하나만 남기고, 요청한 달 밖의 견적은 버린다.
+     * 날짜당 하나만 남기고, 요청한 달 밖의 견적·예약 불가 날짜는 버린다.
      *
      * calendarDeals가 이미 하루 한 건, 요청한 달만 주는 게 정상이지만, 그 보장이 깨져도
      * 화면이 같은 칸에 두 값을 그리거나 [MonthGrid]가 그리지도 않는 날짜를
-     * [cheapestDate]가 가리키는 일이 없도록 여기서도 스스로 지킨다. 지금은 API가 항상
-     * 달 안의 데이터만 주므로 실제로는 걸러질 게 없는 방어 코드다.
+     * [MonthCalendar.cheapestDate]가 가리키는 일이 없도록 여기서도 스스로 지킨다. 지금은
+     * API가 항상 달 안의 데이터만 주므로 실제로는 걸러질 게 없는 방어 코드다.
+     *
+     * [MonthCalendar.cheapestDate]와 [MonthCalendar.median]은 반드시 [CalendarDeals.deals]
+     * (예약 가능한 값)만으로 계산한다 — 살 수 없는 날이 섞여 들면 배지와 강조가
+     * 사용자가 누를 수 없는 값에 끌려간다.
      */
-    private fun build(month: YearMonth, quotes: List<PriceQuote>): MonthCalendar {
-        val byDate = quotes
+    private fun build(month: YearMonth, calendarDeals: CalendarDeals): MonthCalendar {
+        val byDate = calendarDeals.deals
             .filter { YearMonth.from(it.departDate) == month }
             .groupBy { it.departDate }
             .mapValues { (_, dayQuotes) -> dayQuotes.minBy { it.price.amount } }
+
+        val unbookableDates = calendarDeals.unbookableDates.filterTo(mutableSetOf()) { YearMonth.from(it) == month }
 
         return MonthCalendar(
             month = month,
@@ -53,6 +59,7 @@ class GetMonthCalendarUseCase @Inject constructor(
             cheapestDate = byDate.values.minByOrNull { it.price.amount }?.departDate,
             // 중앙값 계산을 새로 쓰지 않는다 — 배지 기준선과 같은 규칙을 쓴다.
             median = PriceStats.from(byDate.values.map { it.price })?.median,
+            unbookableDates = unbookableDates,
         )
     }
 }
