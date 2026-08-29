@@ -4,6 +4,7 @@ import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.Direction
+import com.sypark.flightdeal.domain.model.PriceAlert
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.PriceStats
@@ -13,6 +14,7 @@ import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
+import com.sypark.flightdeal.domain.repository.PriceAlertRepository
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import kotlinx.coroutines.flow.Flow
@@ -109,6 +111,13 @@ class CheckTrackedPricesUseCaseTest {
         }
     }
 
+    private class StubAlerts : PriceAlertRepository {
+        var pruned = false
+        override suspend fun record(changes: List<com.sypark.flightdeal.domain.model.PriceChange>, at: Instant) = Unit
+        override fun observeRecent(days: Int): Flow<List<PriceAlert>> = flowOf(emptyList())
+        override suspend fun pruneOlderThan(days: Int) { pruned = true }
+    }
+
     private fun snapshot(price: Int, tripType: TripType = TripType.ROUND_TRIP) =
         PriceSnapshot(1L, Won(price), tripType, Instant.EPOCH)
 
@@ -116,7 +125,8 @@ class CheckTrackedPricesUseCaseTest {
         routes: TrackedRouteRepository,
         history: PriceHistoryRepository,
         prices: FlightPriceRepository,
-    ) = CheckTrackedPricesUseCase(routes, history, prices, DetectPriceChangesUseCase(), clock)
+        alerts: PriceAlertRepository = StubAlerts(),
+    ) = CheckTrackedPricesUseCase(routes, history, prices, DetectPriceChangesUseCase(), alerts, clock)
 
     @Test
     fun `가격이 내리면 변동을 돌려준다`() = runTest {
@@ -206,14 +216,19 @@ class CheckTrackedPricesUseCaseTest {
     @Test
     fun `실행할 때마다 오래된 이력을 치운다`() = runTest {
         val history = StubHistory(snapshot(300_000))
+        val alerts = StubAlerts()
 
         useCase(
             StubRoutes(listOf(tracked())),
             history,
             StubPrices(AppResult.Success(Won(280_000))),
+            alerts,
         ).invoke()
 
         assertTrue(history.pruned)
+        // 알림 기록도 이력과 같은 기간으로 함께 정리한다. 기간이 갈리면 그래프에는
+        // 없는데 알림 기록에는 남는 변동이 생긴다.
+        assertTrue(alerts.pruned)
     }
 
     @Test
@@ -256,7 +271,7 @@ class CheckTrackedPricesUseCaseTest {
         val useCase = useCase(routes, history, prices)
 
         val first = useCase.invoke()
-        ConfirmNotifiedUseCase(routes).invoke(first)
+        ConfirmNotifiedUseCase(routes, StubAlerts(), clock).invoke(first)
         val second = useCase.invoke()
 
         // 기준선이 250,000으로 옮겨졌으니 같은 값과는 더 이상 비교에서 변동이 아니다.
@@ -307,6 +322,7 @@ class CheckTrackedPricesUseCaseTest {
             StubHistory(snapshot(300_000)),
             stubPrices,
             DetectPriceChangesUseCase(),
+            StubAlerts(),
             clock,
         )
 
@@ -326,6 +342,7 @@ class CheckTrackedPricesUseCaseTest {
             StubHistory(snapshot(300_000)),
             stubPrices,
             DetectPriceChangesUseCase(),
+            StubAlerts(),
             clock,
         )
 
