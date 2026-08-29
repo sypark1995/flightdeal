@@ -2,6 +2,7 @@ package com.sypark.flightdeal.domain.usecase
 
 import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.Airport
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
@@ -48,7 +49,7 @@ class GetDealFeedUseCaseTest {
         override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType) =
             AppResult.Success(emptyList<PriceQuote>())
         override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType) =
-            AppResult.Success(emptyList<PriceQuote>())
+            AppResult.Success(CalendarDeals(emptyList(), emptySet()))
         override suspend fun priceStats(
             route: Route,
             month: YearMonth,
@@ -162,7 +163,7 @@ class GetDealFeedUseCaseTest {
             override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<List<PriceQuote>> = AppResult.Empty
             override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType):
-                AppResult<List<PriceQuote>> = AppResult.Empty
+                AppResult<CalendarDeals> = AppResult.Empty
             override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<PriceStats> = AppResult.Empty
             override suspend fun trackedPrice(
@@ -185,7 +186,7 @@ class GetDealFeedUseCaseTest {
             override suspend fun calendarPrices(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<List<PriceQuote>> = AppResult.Empty
             override suspend fun calendarDeals(route: Route, month: YearMonth, tripType: TripType):
-                AppResult<List<PriceQuote>> = AppResult.Empty
+                AppResult<CalendarDeals> = AppResult.Empty
             override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType):
                 AppResult<PriceStats> {
                 statsTripType = tripType

@@ -29,6 +29,10 @@ import java.time.LocalDate
  * 누를 수 없는 칸(값이 없거나, 지났거나, 예약처 연결이 없는 날)은 [DealCard]가
  * "예약처 연결 없음"으로 누르기 전에 알려주는 것과 같은 이유로, 누르기 전에
  * 흐리게 표시해 조용히 먹통이 되지 않게 한다.
+ *
+ * [isUnbookable]인 날은 [quote]가 항상 null이다 — 가격은 있었지만 한국에서 예약할
+ * 수 있는 곳이 없어 [MonthCalendar.byDate]에서 애초에 빠졌다. 값이 원래 없던 날과
+ * 화면에서 구별되도록 가격 자리에 "—"를 보여준다.
  */
 @Composable
 fun DayCell(
@@ -36,6 +40,7 @@ fun DayCell(
     quote: PriceQuote?,
     isCheapest: Boolean,
     isBelowMedian: Boolean,
+    isUnbookable: Boolean,
     today: LocalDate,
     onClick: (PriceQuote) -> Unit,
     modifier: Modifier = Modifier,
@@ -86,6 +91,15 @@ fun DayCell(
                 text = formatWonCompact(quote.price),
                 color = textColor,
                 fontSize = 10.sp,
+            )
+        } else if (isUnbookable) {
+            // 값이 없는 날(빈 칸)과 구별되도록 이유를 알려준다 — 예약할 수 없는 곳뿐이라
+            // 비운 날이지, 원래 값이 없던 날이 아니다. 누를 수는 없다: isClickable은
+            // quote != null을 요구하는데 이 칸은 항상 quote가 null이다.
+            Text(
+                text = "—",
+                color = FlightDealTheme.colors.textSecondary,
+                fontSize = 11.sp,
             )
         }
     }

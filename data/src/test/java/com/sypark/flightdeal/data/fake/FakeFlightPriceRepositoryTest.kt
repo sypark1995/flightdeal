@@ -95,7 +95,19 @@ class FakeFlightPriceRepositoryTest {
         val prices = (repo.calendarPrices(tokyoRoute, month, TripType.ROUND_TRIP) as AppResult.Success).data
         val deals = (repo.calendarDeals(tokyoRoute, month, TripType.ROUND_TRIP) as AppResult.Success).data
 
-        assertEquals(prices, deals)
+        assertEquals(prices, deals.deals)
+    }
+
+    @Test
+    fun `calendarDeals는 unbookableDates가 비어 있다`() = runTest {
+        // FakeDealFixtures에는 예약처 개념이 없어 걸러낼 게 없다. 예약 불가로
+        // 빠지는 날이 있으면 안 된다.
+        val repo = FakeFlightPriceRepository()
+        val month = YearMonth.of(2026, 10)
+
+        val deals = (repo.calendarDeals(tokyoRoute, month, TripType.ROUND_TRIP) as AppResult.Success).data
+
+        assertTrue(deals.unbookableDates.isEmpty())
     }
 
     @Test

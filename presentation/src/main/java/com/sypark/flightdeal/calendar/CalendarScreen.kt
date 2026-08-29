@@ -194,6 +194,7 @@ fun CalendarScreen(
                                         isCheapest = cell.date != null && cell.date == calendar.cheapestDate,
                                         isBelowMedian = quote != null && median != null &&
                                             quote.price <= median,
+                                        isUnbookable = cell.date != null && cell.date in calendar.unbookableDates,
                                         today = today,
                                         onClick = { picked ->
                                             picked.deepLink?.let { url ->
@@ -262,7 +263,7 @@ private fun CalendarCaption(tripType: TripType) {
             )
         }
         Text(
-            text = "한국에서 예약할 수 없는 예약처만 있는 날은 비워둬요.",
+            text = "한국에서 예약할 수 없는 날은 —로 표시해요.",
             color = FlightDealTheme.colors.textSecondary,
             fontSize = 11.sp,
         )

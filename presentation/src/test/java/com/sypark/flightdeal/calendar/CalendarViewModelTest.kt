@@ -3,6 +3,7 @@ package com.sypark.flightdeal.calendar
 import app.cash.turbine.test
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.AppResult
+import com.sypark.flightdeal.domain.model.CalendarDeals
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.PriceStats
 import com.sypark.flightdeal.domain.model.Route
@@ -70,9 +71,9 @@ class CalendarViewModelTest {
             route: Route,
             month: YearMonth,
             tripType: TripType,
-        ): AppResult<List<PriceQuote>> {
+        ): AppResult<CalendarDeals> {
             calls++
-            return AppResult.Success(listOf(quote(route.destination, 15, 200_000, month)))
+            return AppResult.Success(CalendarDeals(listOf(quote(route.destination, 15, 200_000, month)), emptySet()))
         }
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType) = AppResult.Empty
@@ -93,10 +94,12 @@ class CalendarViewModelTest {
             route: Route,
             month: YearMonth,
             tripType: TripType,
-        ): AppResult<List<PriceQuote>> {
+        ): AppResult<CalendarDeals> {
             val current = ++calls
             delay(if (current == 1) 1_000L else 10L)
-            return AppResult.Success(listOf(quote(route.destination, 15, 100_000 * current, month)))
+            return AppResult.Success(
+                CalendarDeals(listOf(quote(route.destination, 15, 100_000 * current, month)), emptySet()),
+            )
         }
 
         override suspend fun priceStats(route: Route, month: YearMonth, tripType: TripType) = AppResult.Empty
@@ -177,22 +180,35 @@ class CalendarViewModelTest {
     }
 
     @Test
-    fun `기본 달은 이번 달이다`() = runTest {
+    fun `처음 열면 딜 피드와 같은 달을 본다`() = runTest {
+        // 이번 달로 열면 월말에 격자가 거의 비어 "가격 정보가 없는 앱"으로 보인다.
+        // 딜 피드가 보는 두 달 뒤와 같은 달에서 시작해야 처음 연 화면이 차 있다.
         val viewModel = viewModel(CountingRepository())
 
-        assertEquals(YearMonth.of(2026, 8), viewModel.month.value)
+        assertEquals(YearMonth.of(2026, 10), viewModel.month.value)
     }
 
     @Test
-    fun `이번 달보다 과거로는 이동하지 않는다`() = runTest {
+    fun `이번 달까지는 되돌아갈 수 있다`() = runTest {
+        // 기본값은 두 달 뒤(10월)지만, 더 가까운 날짜를 보고 싶을 수 있다.
+        // 실제 이번 달(8월)까지는 내려갈 수 있어야 하고, 그보다 과거로는 못 간다.
         val repo = CountingRepository()
         val viewModel = viewModel(repo)
         advanceUntilIdle()
-        val before = repo.calls
 
         viewModel.previousMonth()
         advanceUntilIdle()
+        assertEquals(YearMonth.of(2026, 9), viewModel.month.value)
 
+        viewModel.previousMonth()
+        advanceUntilIdle()
+        assertEquals(YearMonth.of(2026, 8), viewModel.month.value)
+
+        val before = repo.calls
+        viewModel.previousMonth()
+        advanceUntilIdle()
+
+        // 이번 달(8월)보다 과거로는 못 간다.
         assertEquals(YearMonth.of(2026, 8), viewModel.month.value)
         assertEquals(before, repo.calls)
     }
@@ -207,7 +223,7 @@ class CalendarViewModelTest {
         viewModel.nextMonth()
         advanceUntilIdle()
 
-        assertEquals(YearMonth.of(2026, 9), viewModel.month.value)
+        assertEquals(YearMonth.of(2026, 11), viewModel.month.value)
         assertEquals(before + 1, repo.calls)
     }
 
