@@ -18,6 +18,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.sypark.flightdeal.alerts.AlertHistoryScreen
 import com.sypark.flightdeal.calendar.CalendarScreen
 import com.sypark.flightdeal.feed.DealFeedScreen
 import com.sypark.flightdeal.profile.ProfileScreen
@@ -33,6 +34,9 @@ private enum class Tab(val route: String, val label: String) {
     Search("search", "달력"),
     Profile("profile", "내정보"),
 }
+
+/** 하단 탭이 아니다 — 추적 화면에 딸린 화면이라 별도 경로로만 존재한다. */
+private const val ALERT_HISTORY_ROUTE = "alerts"
 
 @Composable
 fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow(false)) {
@@ -97,9 +101,14 @@ fun FlightDealNavHost(openTracking: MutableStateFlow<Boolean> = MutableStateFlow
                     },
                 )
             }
-            composable(Tab.Tracking.route) { TrackingScreen() }
+            composable(Tab.Tracking.route) {
+                TrackingScreen(onOpenAlertHistory = { navController.navigate(ALERT_HISTORY_ROUTE) })
+            }
             composable(Tab.Search.route) { CalendarScreen() }
             composable(Tab.Profile.route) { ProfileScreen() }
+            composable(ALERT_HISTORY_ROUTE) {
+                AlertHistoryScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

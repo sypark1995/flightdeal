@@ -7,6 +7,7 @@ import com.sypark.flightdeal.domain.model.PriceSnapshot
 import com.sypark.flightdeal.domain.model.TrackedRoute
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
+import com.sypark.flightdeal.domain.repository.PriceAlertRepository
 import com.sypark.flightdeal.domain.repository.PriceHistoryRepository
 import com.sypark.flightdeal.domain.repository.TrackedRouteRepository
 import java.time.Clock
@@ -21,12 +22,16 @@ class CheckTrackedPricesUseCase @Inject constructor(
     private val history: PriceHistoryRepository,
     private val prices: FlightPriceRepository,
     private val detectChanges: DetectPriceChangesUseCase,
+    private val alerts: PriceAlertRepository,
     private val clock: Clock,
 ) {
 
     suspend operator fun invoke(): List<PriceChange> {
-        // 이력은 계속 쌓인다. 조회하러 온 김에 치운다.
+        // 이력과 알림 기록은 계속 쌓인다. 조회하러 온 김에 치운다.
+        // 같은 기간(PRICE_HISTORY_RETENTION_DAYS)으로 함께 정리한다 — 기간이 갈리면
+        // 그래프에는 없는데 알림 기록에는 남는 변동이 생긴다.
         history.pruneOlderThan(PRICE_HISTORY_RETENTION_DAYS)
+        alerts.pruneOlderThan(PRICE_HISTORY_RETENTION_DAYS)
 
         // 출발일이 지난 노선은 조회하지 않는다. 소스가 지난 날짜에 아무것도 주지
         // 않아 매번 헛돌고 API 쿼터만 쓴다. 오늘 출발은 아직 탈 수 있으므로 남긴다.
