@@ -8,6 +8,7 @@ import com.sypark.flightdeal.domain.model.AppResult
 import com.sypark.flightdeal.domain.model.DealItem
 import com.sypark.flightdeal.domain.model.PriceQuote
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.domain.repository.SettingsRepository
 import com.sypark.flightdeal.domain.usecase.GetDealFeedUseCase
 import com.sypark.flightdeal.domain.usecase.TrackRouteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,10 +28,21 @@ import javax.inject.Inject
 class DealFeedViewModel @Inject constructor(
     private val getDealFeed: GetDealFeedUseCase,
     private val trackRoute: TrackRouteUseCase,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DealFeedUiState>(DealFeedUiState.Loading)
     val uiState: StateFlow<DealFeedUiState> = _uiState.asStateFlow()
+
+    private val _origin = MutableStateFlow(Airport.INCHEON)
+    val origin: StateFlow<Airport> = _origin.asStateFlow()
+
+    /**
+     * 저장된 출발지를 아직 한 번도 못 읽었는지. [_origin]의 초깃값(인천)과 실제로
+     * 저장된 값이 우연히 같으면 "값이 바뀌었는지"만으로는 최초 조회를 트리거할 수
+     * 없다 — 그래서 값 비교와 별개로 최초 1회는 무조건 조회한다.
+     */
+    private var originLoaded = false
 
     private val _tripType = MutableStateFlow(TripType.ROUND_TRIP)
     val tripType: StateFlow<TripType> = _tripType.asStateFlow()
@@ -71,7 +83,19 @@ class DealFeedViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     init {
-        refresh()
+        // 인천으로 먼저 그렸다가 저장된 값으로 다시 그리면 화면이 한 번 깜빡인다.
+        // 그래서 refresh()를 바로 부르지 않고, DataStore가 실제 값을 주는 순간에만
+        // 조회를 시작한다. 이후 값이 바뀔 때(달력 등 다른 화면에서 바꿔도)도
+        // 같은 경로로 다시 조회된다 — 두 화면이 다른 출발지를 보여줄 일이 없다.
+        viewModelScope.launch {
+            settings.observeOrigin().collect { newOrigin ->
+                val changed = originLoaded && newOrigin != _origin.value
+                _origin.value = newOrigin
+                val shouldLoad = !originLoaded || changed
+                originLoaded = true
+                if (shouldLoad) load()
+            }
+        }
     }
 
     /** 같은 값이면 조회하지 않는다. 토글을 두 번 눌렀다고 왕복을 다시 받을 이유가 없다. */
@@ -82,6 +106,15 @@ class DealFeedViewModel @Inject constructor(
     }
 
     fun refresh() = load()
+
+    /**
+     * 출발지를 고르면 DataStore에 저장한다. 화면 상태([_origin])는 여기서 직접
+     * 바꾸지 않는다 — [init]의 collect가 저장된 값을 다시 읽어와 반영해야
+     * 캘린더 화면도 같은 경로로 같은 값을 보게 된다.
+     */
+    fun selectOrigin(airport: Airport) {
+        viewModelScope.launch { settings.setOrigin(airport) }
+    }
 
     private fun load() {
         // 재시도 버튼을 연타하면 느린 이전 요청이 나중에 끝나 최신 결과를 덮어쓴다.
@@ -98,11 +131,14 @@ class DealFeedViewModel @Inject constructor(
             // 이 코루틴이 도는 동안에도 다시 바뀔 수 있어, 나중에 다시 읽으면
             // 이 요청이 실제로 물어본 종류가 아닐 수 있다.
             val requestedTripType = _tripType.value
+            // 출발지도 트립타입과 같은 이유로 시작 시점에 고정한다 — 조회가 도는 동안
+            // 사용자가 다른 공항을 고르면 [_origin]이 먼저 바뀌어, 나중에 다시 읽으면
+            // 이 요청이 실제로 물어본 공항이 아닐 수 있다.
+            val requestedOrigin = _origin.value
             if (!hadData) _uiState.value = DealFeedUiState.Loading
 
-            // 기본 출발지는 인천 고정. 설정 화면이 생기면 DataStore에서 읽는다.
             val nextState = try {
-                when (val result = getDealFeed(Airport.INCHEON, requestedTripType)) {
+                when (val result = getDealFeed(requestedOrigin, requestedTripType)) {
                     is AppResult.Success -> DealFeedUiState.Success(result.data)
                     AppResult.Empty -> DealFeedUiState.Empty
                     is AppResult.NetworkError -> {

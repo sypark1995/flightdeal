@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sypark.flightdeal.booking.BookingLauncher
 import com.sypark.flightdeal.domain.model.Airport
 import com.sypark.flightdeal.domain.model.TripType
+import com.sypark.flightdeal.ui.OriginSelector
 import com.sypark.flightdeal.ui.theme.FlightDealTheme
 
 private val WEEKDAY_HEADERS = listOf("월", "화", "수", "목", "금", "토", "일")
@@ -46,6 +47,7 @@ fun CalendarScreen(
     viewModel: CalendarViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val origin by viewModel.origin.collectAsStateWithLifecycle()
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val month by viewModel.month.collectAsStateWithLifecycle()
     val tripType by viewModel.tripType.collectAsStateWithLifecycle()
@@ -78,6 +80,8 @@ fun CalendarScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(16.dp),
             )
+
+            OriginSelector(origin = origin, onSelect = viewModel::selectOrigin)
 
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),

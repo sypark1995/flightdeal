@@ -10,10 +10,13 @@ import com.sypark.flightdeal.domain.model.Route
 import com.sypark.flightdeal.domain.model.TripType
 import com.sypark.flightdeal.domain.model.Won
 import com.sypark.flightdeal.domain.repository.FlightPriceRepository
+import com.sypark.flightdeal.domain.repository.SettingsRepository
 import com.sypark.flightdeal.domain.usecase.GetMonthCalendarUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -118,8 +121,19 @@ class CalendarViewModelTest {
         ): AppResult<Won> = AppResult.Empty
     }
 
-    private fun viewModel(repository: FlightPriceRepository) =
-        CalendarViewModel(GetMonthCalendarUseCase(repository), fixedClock)
+    private fun viewModel(repository: FlightPriceRepository, settings: SettingsRepository = FakeSettingsRepository()) =
+        CalendarViewModel(GetMonthCalendarUseCase(repository), fixedClock, settings)
+
+    /** [Airport.observeOrigin]을 즉시 흘려보내는 스텁. 기본은 인천이다. */
+    private class FakeSettingsRepository(
+        initial: Airport = Airport.INCHEON,
+    ) : SettingsRepository {
+        private val origin = MutableStateFlow(initial)
+        override fun observeOrigin(): Flow<Airport> = origin
+        override suspend fun setOrigin(origin: Airport) {
+            this.origin.value = origin
+        }
+    }
 
     @Test
     fun `목적지를 바꾸면 다시 조회한다`() = runTest {
@@ -245,5 +259,36 @@ class CalendarViewModelTest {
 
             assertEquals("예약 페이지를 열 수 있는 앱이 없어요", awaitItem())
         }
+    }
+
+    @Test
+    fun `저장된 출발지로 처음 조회한다`() = runTest {
+        // 인천이 아니라 저장된 값(부산)으로 첫 조회가 나가야 한다 — 기본값으로 한 번
+        // 조회했다가 저장된 값으로 다시 조회하면 화면이 한 번 더 깜빡인다.
+        val busan = Airport("PUS", "부산", "대한민국")
+        val settings = FakeSettingsRepository(initial = busan)
+        val viewModel = viewModel(CountingRepository(), settings)
+        advanceUntilIdle()
+
+        assertEquals(busan, viewModel.origin.value)
+    }
+
+    @Test
+    fun `출발지가 바뀌면 다시 조회한다`() = runTest {
+        // 피드에서 출발지를 바꾸면 그 값이 SettingsRepository를 통해 이 ViewModel에도
+        // 흘러들어온다. 캘린더가 이걸 무시하면 같은 노선인데 화면마다 다른 출발지의
+        // 가격을 보여주게 된다.
+        val repo = CountingRepository()
+        val settings = FakeSettingsRepository()
+        val viewModel = viewModel(repo, settings)
+        advanceUntilIdle()
+        val before = repo.calls
+
+        val busan = Airport("PUS", "부산", "대한민국")
+        settings.setOrigin(busan)
+        advanceUntilIdle()
+
+        assertEquals(busan, viewModel.origin.value)
+        assertEquals(before + 1, repo.calls)
     }
 }
